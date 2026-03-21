@@ -1,0 +1,2847 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>rextension-health: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">github.com/kryovyx/rextension-health/check_cache.go (100.0%)</option>
+				
+				<option value="file1">github.com/kryovyx/rextension-health/circuit_breaker.go (98.4%)</option>
+				
+				<option value="file2">github.com/kryovyx/rextension-health/client_wrapper.go (100.0%)</option>
+				
+				<option value="file3">github.com/kryovyx/rextension-health/config.go (100.0%)</option>
+				
+				<option value="file4">github.com/kryovyx/rextension-health/dep_state.go (100.0%)</option>
+				
+				<option value="file5">github.com/kryovyx/rextension-health/dep_state_store.go (100.0%)</option>
+				
+				<option value="file6">github.com/kryovyx/rextension-health/dep_state_store_default.go (100.0%)</option>
+				
+				<option value="file7">github.com/kryovyx/rextension-health/extension.go (100.0%)</option>
+				
+				<option value="file8">github.com/kryovyx/rextension-health/health_check.go (100.0%)</option>
+				
+				<option value="file9">github.com/kryovyx/rextension-health/health_dep_route.go (100.0%)</option>
+				
+				<option value="file10">github.com/kryovyx/rextension-health/middleware.go (100.0%)</option>
+				
+				<option value="file11">github.com/kryovyx/rextension-health/middleware_default.go (96.7%)</option>
+				
+				<option value="file12">github.com/kryovyx/rextension-health/registry_default.go (100.0%)</option>
+				
+				<option value="file13">github.com/kryovyx/rextension-health/route_dep_map.go (100.0%)</option>
+				
+				<option value="file14">github.com/kryovyx/rextension-health/route_dep_map_default.go (100.0%)</option>
+				
+				<option value="file15">github.com/kryovyx/rextension-health/route_live.go (100.0%)</option>
+				
+				<option value="file16">github.com/kryovyx/rextension-health/route_ready.go (100.0%)</option>
+				
+				<option value="file17">github.com/kryovyx/rextension-health/route_status.go (100.0%)</option>
+				
+				<option value="file18">github.com/kryovyx/rextension-health/snapshot_cache.go (96.5%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: © 2026 Kryovyx
+
+package health
+
+import (
+        "context"
+        "sync"
+        "time"
+
+        "github.com/kryovyx/rex/logger"
+)
+
+// CheckCache caches health check results for passive checks.
+// On-demand checks skip caching (CacheTTL is forced to zero).
+// Each check result is cached for its configured CacheTTL when applicable.
+type CheckCache interface {
+        // GetOrExecute returns a cached result if valid, otherwise executes the check.
+        // For passive checks, this runs the check on-demand and caches the result.
+        // For active checks, this just executes without caching (they use DepStateStore).
+        GetOrExecute(ctx context.Context, check HealthCheck) *CheckResult
+        // Invalidate removes a cached result for the given check name.
+        Invalidate(name string)
+        // Clear removes all cached results.
+        Clear()
+}
+
+// cachedResult holds a check result with expiration.
+type cachedResult struct {
+        result    *CheckResult
+        expiresAt time.Time
+}
+
+// checkCache is the default implementation of CheckCache.
+type checkCache struct {
+        cache      map[string]*cachedResult
+        mu         sync.RWMutex
+        stateStore DepStateStore
+        logger     logger.Logger
+}
+
+// NewCheckCache creates a new check cache.
+// The stateStore is used to update dependency state after passive check execution.
+func NewCheckCache(stateStore DepStateStore, l logger.Logger) CheckCache <span class="cov8" title="1">{
+        return &amp;checkCache{
+                cache:      make(map[string]*cachedResult),
+                stateStore: stateStore,
+                logger:     l,
+        }
+}</span>
+
+// GetOrExecute returns a cached result if valid, otherwise executes the check.
+func (c *checkCache) GetOrExecute(ctx context.Context, check HealthCheck) *CheckResult <span class="cov8" title="1">{
+        name := check.Name()
+
+        // For active checks, just execute - they don't use this cache
+        if check.Mode() == CheckModeActive </span><span class="cov8" title="1">{
+                if c.logger != nil </span><span class="cov8" title="1">{
+                        c.logger.Trace("health: executing active check %s (no cache)", name)
+                }</span>
+                <span class="cov8" title="1">return check.Execute(ctx)</span>
+        }
+
+        // For passive/on-demand checks, check cache first
+        <span class="cov8" title="1">c.mu.RLock()
+        if cached, ok := c.cache[name]; ok &amp;&amp; time.Now().Before(cached.expiresAt) </span><span class="cov8" title="1">{
+                if c.logger != nil </span><span class="cov8" title="1">{
+                        c.logger.Trace("health: cache hit for check %s (status=%s)", name, cached.result.Status)
+                }</span>
+                <span class="cov8" title="1">c.mu.RUnlock()
+                return cached.result</span>
+        }
+        <span class="cov8" title="1">c.mu.RUnlock()
+
+        // Cache miss or expired - execute the check
+        if c.logger != nil </span><span class="cov8" title="1">{
+                c.logger.Trace("health: executing on-demand check %s (mode=%s)", name, check.Mode())
+        }</span>
+        <span class="cov8" title="1">result := check.Execute(ctx)
+
+        // Cache the result with TTL (may be zero for OnDemand)
+        ttl := check.CacheTTL()
+        if ttl &gt; 0 </span><span class="cov8" title="1">{
+                c.mu.Lock()
+                c.cache[name] = &amp;cachedResult{
+                        result:    result,
+                        expiresAt: time.Now().Add(ttl),
+                }
+                c.mu.Unlock()
+        }</span>
+
+        // Update state store so it appears in /status
+        <span class="cov8" title="1">if c.stateStore != nil </span><span class="cov8" title="1">{
+                if result.Status == StatusUp </span><span class="cov8" title="1">{
+                        c.stateStore.ReportSuccess(name, result.Duration)
+                }</span> else<span class="cov8" title="1"> {
+                        c.stateStore.ReportFailure(name, result.Message)
+                }</span>
+                <span class="cov8" title="1">c.stateStore.SetStatus(name, result.Status, result.Message)</span>
+        }
+
+        <span class="cov8" title="1">if c.logger != nil </span><span class="cov8" title="1">{
+                c.logger.Trace("health: check %s executed (status=%s, ttl=%s)", name, result.Status, ttl)
+        }</span>
+
+        <span class="cov8" title="1">return result</span>
+}
+
+// Invalidate removes a cached result for the given check name.
+func (c *checkCache) Invalidate(name string) <span class="cov8" title="1">{
+        c.mu.Lock()
+        defer c.mu.Unlock()
+        delete(c.cache, name)
+}</span>
+
+// Clear removes all cached results.
+func (c *checkCache) Clear() <span class="cov8" title="1">{
+        c.mu.Lock()
+        defer c.mu.Unlock()
+        c.cache = make(map[string]*cachedResult)
+}</span>
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: © 2026 Kryovyx
+
+package health
+
+import (
+        "sync"
+        "time"
+)
+
+// CircuitBreakerConfig configures a circuit breaker.
+type CircuitBreakerConfig struct {
+        // FailureThreshold is the number of failures to open the circuit.
+        FailureThreshold int
+        // SuccessThreshold is the number of successes to close the circuit from half-open.
+        SuccessThreshold int
+        // Timeout is the duration the circuit stays open before transitioning to half-open.
+        Timeout time.Duration
+        // HalfOpenMaxCalls is the maximum concurrent calls allowed in half-open state.
+        HalfOpenMaxCalls int
+}
+
+// DefaultCircuitBreakerConfig returns sensible defaults.
+func DefaultCircuitBreakerConfig() CircuitBreakerConfig <span class="cov8" title="1">{
+        return CircuitBreakerConfig{
+                FailureThreshold: 5,
+                SuccessThreshold: 2,
+                Timeout:          30 * time.Second,
+                HalfOpenMaxCalls: 1,
+        }
+}</span>
+
+// CircuitBreaker implements the circuit breaker pattern.
+type CircuitBreaker interface {
+        // State returns the current circuit state.
+        State() CircuitState
+        // Allow checks if a request should be allowed.
+        Allow() bool
+        // Success records a successful call.
+        Success()
+        // Failure records a failed call.
+        Failure()
+        // Reset resets the circuit breaker to closed state.
+        Reset()
+}
+
+// circuitBreaker is the default implementation.
+type circuitBreaker struct {
+        cfg           CircuitBreakerConfig
+        state         CircuitState
+        failureCount  int
+        successCount  int
+        lastFailure   time.Time
+        halfOpenCalls int
+        mu            sync.Mutex
+        stateStore    DepStateStore
+        depID         string
+}
+
+// NewCircuitBreaker creates a new circuit breaker.
+func NewCircuitBreaker(cfg CircuitBreakerConfig) CircuitBreaker <span class="cov8" title="1">{
+        return &amp;circuitBreaker{
+                cfg:   cfg,
+                state: CircuitClosed,
+        }
+}</span>
+
+// NewCircuitBreakerWithStore creates a circuit breaker that syncs with a DepStateStore.
+func NewCircuitBreakerWithStore(cfg CircuitBreakerConfig, store DepStateStore, depID string) CircuitBreaker <span class="cov8" title="1">{
+        cb := &amp;circuitBreaker{
+                cfg:        cfg,
+                state:      CircuitClosed,
+                stateStore: store,
+                depID:      depID,
+        }
+        // Register dependency
+        if store != nil &amp;&amp; depID != "" </span><span class="cov8" title="1">{
+                store.Register(depID)
+        }</span>
+        <span class="cov8" title="1">return cb</span>
+}
+
+// State returns the current circuit state.
+func (cb *circuitBreaker) State() CircuitState <span class="cov8" title="1">{
+        cb.mu.Lock()
+        defer cb.mu.Unlock()
+        cb.checkState()
+        return cb.state
+}</span>
+
+// Allow checks if a request should be allowed.
+func (cb *circuitBreaker) Allow() bool <span class="cov8" title="1">{
+        cb.mu.Lock()
+        defer cb.mu.Unlock()
+        cb.checkState()
+
+        switch cb.state </span>{
+        case CircuitClosed:<span class="cov8" title="1">
+                return true</span>
+        case CircuitOpen:<span class="cov8" title="1">
+                return false</span>
+        case CircuitHalfOpen:<span class="cov8" title="1">
+                if cb.halfOpenCalls &lt; cb.cfg.HalfOpenMaxCalls </span><span class="cov8" title="1">{
+                        cb.halfOpenCalls++
+                        return true
+                }</span>
+                <span class="cov8" title="1">return false</span>
+        }
+        <span class="cov0" title="0">return false</span>
+}
+
+// Success records a successful call.
+func (cb *circuitBreaker) Success() <span class="cov8" title="1">{
+        cb.mu.Lock()
+        defer cb.mu.Unlock()
+
+        if cb.state == CircuitHalfOpen </span><span class="cov8" title="1">{
+                cb.successCount++
+                if cb.successCount &gt;= cb.cfg.SuccessThreshold </span><span class="cov8" title="1">{
+                        cb.state = CircuitClosed
+                        cb.failureCount = 0
+                        cb.successCount = 0
+                        cb.halfOpenCalls = 0
+                        cb.syncState(StatusUp, "")
+                }</span>
+        } else<span class="cov8" title="1"> if cb.state == CircuitClosed </span><span class="cov8" title="1">{
+                cb.failureCount = 0
+        }</span>
+}
+
+// Failure records a failed call.
+func (cb *circuitBreaker) Failure() <span class="cov8" title="1">{
+        cb.mu.Lock()
+        defer cb.mu.Unlock()
+
+        cb.failureCount++
+        cb.lastFailure = time.Now()
+
+        if cb.state == CircuitHalfOpen </span><span class="cov8" title="1">{
+                // Any failure in half-open returns to open
+                cb.state = CircuitOpen
+                cb.successCount = 0
+                cb.halfOpenCalls = 0
+                cb.syncState(StatusDown, "circuit open after half-open failure")
+        }</span> else<span class="cov8" title="1"> if cb.failureCount &gt;= cb.cfg.FailureThreshold </span><span class="cov8" title="1">{
+                cb.state = CircuitOpen
+                cb.syncState(StatusDown, "circuit open due to failures")
+        }</span> else<span class="cov8" title="1"> if cb.failureCount &gt;= cb.cfg.FailureThreshold/2 </span><span class="cov8" title="1">{
+                cb.syncState(StatusDegraded, "elevated failure rate")
+        }</span>
+}
+
+// Reset resets the circuit breaker to closed state.
+func (cb *circuitBreaker) Reset() <span class="cov8" title="1">{
+        cb.mu.Lock()
+        defer cb.mu.Unlock()
+        cb.state = CircuitClosed
+        cb.failureCount = 0
+        cb.successCount = 0
+        cb.halfOpenCalls = 0
+        cb.syncState(StatusUp, "")
+}</span>
+
+// checkState checks if the circuit should transition (e.g., open -&gt; half-open).
+func (cb *circuitBreaker) checkState() <span class="cov8" title="1">{
+        if cb.state == CircuitOpen &amp;&amp; time.Since(cb.lastFailure) &gt;= cb.cfg.Timeout </span><span class="cov8" title="1">{
+                cb.state = CircuitHalfOpen
+                cb.halfOpenCalls = 0
+                cb.successCount = 0
+                cb.syncState(StatusDegraded, "circuit half-open")
+        }</span>
+}
+
+// syncState updates the associated DepStateStore.
+func (cb *circuitBreaker) syncState(status Status, message string) <span class="cov8" title="1">{
+        if cb.stateStore != nil &amp;&amp; cb.depID != "" </span><span class="cov8" title="1">{
+                cb.stateStore.SetStatus(cb.depID, status, message)
+                cb.stateStore.SetCircuitState(cb.depID, cb.state)
+        }</span>
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: © 2026 Kryovyx
+
+package health
+
+import (
+        "context"
+        "net/http"
+        "time"
+)
+
+// HTTPClientOption configures the wrapped HTTP client.
+type HTTPClientOption func(*wrappedHTTPClient)
+
+// WithHTTPTimeout sets the request timeout.
+func WithHTTPTimeout(timeout time.Duration) HTTPClientOption <span class="cov8" title="1">{
+        return func(c *wrappedHTTPClient) </span><span class="cov8" title="1">{
+                c.timeout = timeout
+        }</span>
+}
+
+// WithRetries configures retry behavior.
+func WithRetries(maxRetries int, backoff time.Duration) HTTPClientOption <span class="cov8" title="1">{
+        return func(c *wrappedHTTPClient) </span><span class="cov8" title="1">{
+                c.maxRetries = maxRetries
+                c.retryBackoff = backoff
+        }</span>
+}
+
+// WithCircuitBreaker attaches a circuit breaker.
+func WithCircuitBreaker(cb CircuitBreaker) HTTPClientOption <span class="cov8" title="1">{
+        return func(c *wrappedHTTPClient) </span><span class="cov8" title="1">{
+                c.circuitBreaker = cb
+        }</span>
+}
+
+// wrappedHTTPClient wraps an HTTP client with health reporting.
+type wrappedHTTPClient struct {
+        client         *http.Client
+        depID          string
+        stateStore     DepStateStore
+        circuitBreaker CircuitBreaker
+        timeout        time.Duration
+        maxRetries     int
+        retryBackoff   time.Duration
+}
+
+// HTTPClient defines the interface for an HTTP client with health reporting.
+type HTTPClient interface {
+        Do(ctx context.Context, req *http.Request) (*http.Response, error)
+        Get(ctx context.Context, url string) (*http.Response, error)
+        Post(ctx context.Context, url, contentType string, body []byte) (*http.Response, error)
+}
+
+// WrapHTTPClient wraps an HTTP client for health reporting.
+func WrapHTTPClient(client *http.Client, depID string, store DepStateStore, opts ...HTTPClientOption) HTTPClient <span class="cov8" title="1">{
+        if client == nil </span><span class="cov8" title="1">{
+                client = http.DefaultClient
+        }</span>
+        <span class="cov8" title="1">c := &amp;wrappedHTTPClient{
+                client:       client,
+                depID:        depID,
+                stateStore:   store,
+                timeout:      30 * time.Second,
+                maxRetries:   0,
+                retryBackoff: 100 * time.Millisecond,
+        }
+        for _, opt := range opts </span><span class="cov8" title="1">{
+                opt(c)
+        }</span>
+        <span class="cov8" title="1">return c</span>
+}
+
+// Do executes an HTTP request with health tracking.
+func (c *wrappedHTTPClient) Do(ctx context.Context, req *http.Request) (*http.Response, error) <span class="cov8" title="1">{
+        // Check circuit breaker
+        if c.circuitBreaker != nil &amp;&amp; !c.circuitBreaker.Allow() </span><span class="cov8" title="1">{
+                return nil, &amp;CircuitOpenError{DepID: c.depID}
+        }</span>
+
+        // Apply timeout
+        <span class="cov8" title="1">ctx, cancel := context.WithTimeout(ctx, c.timeout)
+        defer cancel()
+        req = req.WithContext(ctx)
+
+        var resp *http.Response
+        var err error
+        start := time.Now()
+
+        // Execute with retries
+        attempts := 1 + c.maxRetries
+        for i := 0; i &lt; attempts; i++ </span><span class="cov8" title="1">{
+                resp, err = c.client.Do(req)
+                if err == nil &amp;&amp; resp.StatusCode &lt; 500 </span><span class="cov8" title="1">{
+                        break</span>
+                }
+                <span class="cov8" title="1">if i &lt; attempts-1 </span><span class="cov8" title="1">{
+                        time.Sleep(c.retryBackoff * time.Duration(i+1))
+                }</span>
+        }
+
+        <span class="cov8" title="1">latency := time.Since(start)
+
+        // Report result
+        if err != nil || (resp != nil &amp;&amp; resp.StatusCode &gt;= 500) </span><span class="cov8" title="1">{
+                errType := "unknown"
+                if err != nil </span><span class="cov8" title="1">{
+                        errType = err.Error()
+                }</span> else<span class="cov8" title="1"> {
+                        errType = http.StatusText(resp.StatusCode)
+                }</span>
+                <span class="cov8" title="1">c.reportFailure(errType)
+                if c.circuitBreaker != nil </span><span class="cov8" title="1">{
+                        c.circuitBreaker.Failure()
+                }</span>
+        } else<span class="cov8" title="1"> {
+                c.reportSuccess(latency)
+                if c.circuitBreaker != nil </span><span class="cov8" title="1">{
+                        c.circuitBreaker.Success()
+                }</span>
+        }
+
+        <span class="cov8" title="1">return resp, err</span>
+}
+
+// Get performs an HTTP GET request.
+func (c *wrappedHTTPClient) Get(ctx context.Context, url string) (*http.Response, error) <span class="cov8" title="1">{
+        req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return c.Do(ctx, req)</span>
+}
+
+// Post performs an HTTP POST request.
+func (c *wrappedHTTPClient) Post(ctx context.Context, url, contentType string, body []byte) (*http.Response, error) <span class="cov8" title="1">{
+        req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">req.Header.Set("Content-Type", contentType)
+        return c.Do(ctx, req)</span>
+}
+
+func (c *wrappedHTTPClient) reportSuccess(latency time.Duration) <span class="cov8" title="1">{
+        if c.stateStore != nil &amp;&amp; c.depID != "" </span><span class="cov8" title="1">{
+                c.stateStore.ReportSuccess(c.depID, latency)
+        }</span>
+}
+
+func (c *wrappedHTTPClient) reportFailure(errType string) <span class="cov8" title="1">{
+        if c.stateStore != nil &amp;&amp; c.depID != "" </span><span class="cov8" title="1">{
+                c.stateStore.ReportFailure(c.depID, errType)
+        }</span>
+}
+
+// CircuitOpenError is returned when the circuit breaker is open.
+type CircuitOpenError struct {
+        DepID string
+}
+
+func (e *CircuitOpenError) Error() string <span class="cov8" title="1">{
+        return "circuit breaker open for dependency: " + e.DepID
+}</span>
+
+// DepReporter provides a simple interface for reporting dependency status.
+type DepReporter interface {
+        // ReportSuccess reports a successful operation.
+        ReportSuccess(latency time.Duration)
+        // ReportFailure reports a failed operation.
+        ReportFailure(errType string)
+}
+
+// depReporter is a simple reporter implementation.
+type depReporter struct {
+        depID      string
+        stateStore DepStateStore
+        cb         CircuitBreaker
+}
+
+// NewDepReporter creates a dependency reporter.
+func NewDepReporter(depID string, store DepStateStore, cb CircuitBreaker) DepReporter <span class="cov8" title="1">{
+        return &amp;depReporter{
+                depID:      depID,
+                stateStore: store,
+                cb:         cb,
+        }
+}</span>
+
+func (r *depReporter) ReportSuccess(latency time.Duration) <span class="cov8" title="1">{
+        if r.stateStore != nil </span><span class="cov8" title="1">{
+                r.stateStore.ReportSuccess(r.depID, latency)
+        }</span>
+        <span class="cov8" title="1">if r.cb != nil </span><span class="cov8" title="1">{
+                r.cb.Success()
+        }</span>
+}
+
+func (r *depReporter) ReportFailure(errType string) <span class="cov8" title="1">{
+        if r.stateStore != nil </span><span class="cov8" title="1">{
+                r.stateStore.ReportFailure(r.depID, errType)
+        }</span>
+        <span class="cov8" title="1">if r.cb != nil </span><span class="cov8" title="1">{
+                r.cb.Failure()
+        }</span>
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: © 2026 Kryovyx
+
+package health
+
+import (
+        "time"
+
+        rx "github.com/kryovyx/rex"
+)
+
+// Config controls the health extension behavior.
+type Config struct {
+        // LivePath is the HTTP path for liveness checks. Default: "/live".
+        LivePath string `default:"/live"`
+        // ReadyPath is the HTTP path for readiness checks. Default: "/ready".
+        ReadyPath string `default:"/ready"`
+        // StatusPath is the HTTP path for full status. Default: "/status".
+        StatusPath string `default:"/status"`
+        // AtDefaultAddr serves health endpoints on the default router when true.
+        AtDefaultAddr bool `default:"false"`
+        // Router config for the dedicated health router when AtDefaultAddr is false.
+        Router rx.RouterConfig
+        // SnapshotTTL is the cache duration for health snapshots. Default: 5s.
+        SnapshotTTL time.Duration `default:"5s"`
+        // CheckInterval is how often registered health checks are executed. Default: 10s.
+        // Set to 0 to disable automatic checking (checks only run on-demand).
+        CheckInterval time.Duration `default:"10s"`
+        // StateStoreConfig configures the dependency state store.
+        StateStoreConfig DepStateStoreConfig
+        // EnableDependencyGate enables the dependency gate middleware.
+        EnableDependencyGate bool `default:"true"`
+}
+
+// NewDefaultConfig returns the default configuration for the health extension.
+func NewDefaultConfig() *Config <span class="cov8" title="1">{
+        return &amp;Config{
+                LivePath:             "/live",
+                ReadyPath:            "/ready",
+                StatusPath:           "/status",
+                AtDefaultAddr:        false,
+                Router:               rx.RouterConfig{Addr: ":9091", BaseURL: "/", SSLVerify: true, ListenSSL: true},
+                SnapshotTTL:          5 * time.Second,
+                CheckInterval:        10 * time.Second,
+                StateStoreConfig:     DefaultDepStateStoreConfig(),
+                EnableDependencyGate: true,
+        }
+}</span>
+
+// ConfigOption allows functional configuration.
+type ConfigOption func(*Config)
+
+// WithLivePath sets the live endpoint path.
+func WithLivePath(path string) ConfigOption <span class="cov8" title="1">{
+        return func(c *Config) </span><span class="cov8" title="1">{
+                c.LivePath = path
+        }</span>
+}
+
+// WithReadyPath sets the ready endpoint path.
+func WithReadyPath(path string) ConfigOption <span class="cov8" title="1">{
+        return func(c *Config) </span><span class="cov8" title="1">{
+                c.ReadyPath = path
+        }</span>
+}
+
+// WithStatusPath sets the status endpoint path.
+func WithStatusPath(path string) ConfigOption <span class="cov8" title="1">{
+        return func(c *Config) </span><span class="cov8" title="1">{
+                c.StatusPath = path
+        }</span>
+}
+
+// WithAtDefaultAddr configures whether to use the default router.
+func WithAtDefaultAddr(atDefault bool) ConfigOption <span class="cov8" title="1">{
+        return func(c *Config) </span><span class="cov8" title="1">{
+                c.AtDefaultAddr = atDefault
+        }</span>
+}
+
+// WithHealthRouter sets the dedicated health router config.
+func WithHealthRouter(cfg rx.RouterConfig) ConfigOption <span class="cov8" title="1">{
+        return func(c *Config) </span><span class="cov8" title="1">{
+                c.Router = cfg
+        }</span>
+}
+
+// WithSnapshotTTL sets the snapshot cache TTL.
+func WithSnapshotTTL(ttl time.Duration) ConfigOption <span class="cov8" title="1">{
+        return func(c *Config) </span><span class="cov8" title="1">{
+                c.SnapshotTTL = ttl
+        }</span>
+}
+
+// WithCheckInterval sets how often health checks are executed automatically.
+// Set to 0 to disable automatic checking.
+func WithCheckInterval(interval time.Duration) ConfigOption <span class="cov8" title="1">{
+        return func(c *Config) </span><span class="cov8" title="1">{
+                c.CheckInterval = interval
+        }</span>
+}
+
+// WithStateStoreConfig sets the state store configuration.
+func WithStateStoreConfig(cfg DepStateStoreConfig) ConfigOption <span class="cov8" title="1">{
+        return func(c *Config) </span><span class="cov8" title="1">{
+                c.StateStoreConfig = cfg
+        }</span>
+}
+
+// WithDependencyGate enables or disables the dependency gate middleware.
+func WithDependencyGate(enable bool) ConfigOption <span class="cov8" title="1">{
+        return func(c *Config) </span><span class="cov8" title="1">{
+                c.EnableDependencyGate = enable
+        }</span>
+}
+
+// NewConfig creates a config with the given options.
+func NewConfig(opts ...ConfigOption) *Config <span class="cov8" title="1">{
+        c := NewDefaultConfig()
+        for _, opt := range opts </span><span class="cov8" title="1">{
+                opt(c)
+        }</span>
+        <span class="cov8" title="1">return c</span>
+}
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: © 2026 Kryovyx
+
+// Package health provides a Rex extension for comprehensive health checking,
+// dependency state management, and circuit breaker patterns.
+//
+// This file defines the core status types and dependency state structures.
+package health
+
+import (
+        "sync"
+        "time"
+)
+
+// Status represents the health state of a dependency or service.
+type Status int
+
+const (
+        // StatusUp indicates the dependency is fully operational.
+        StatusUp Status = iota
+        // StatusDegraded indicates the dependency is operational but with issues.
+        StatusDegraded
+        // StatusDown indicates the dependency is not operational.
+        StatusDown
+        // StatusUnknown indicates the dependency state has not been determined yet.
+        StatusUnknown
+)
+
+// String returns the string representation of the status.
+func (s Status) String() string <span class="cov8" title="1">{
+        switch s </span>{
+        case StatusUp:<span class="cov8" title="1">
+                return "UP"</span>
+        case StatusDegraded:<span class="cov8" title="1">
+                return "DEGRADED"</span>
+        case StatusDown:<span class="cov8" title="1">
+                return "DOWN"</span>
+        case StatusUnknown:<span class="cov8" title="1">
+                return "UNKNOWN"</span>
+        default:<span class="cov8" title="1">
+                return "UNKNOWN"</span>
+        }
+}
+
+// MarshalJSON implements json.Marshaler to serialize Status as a string.
+func (s Status) MarshalJSON() ([]byte, error) <span class="cov8" title="1">{
+        return []byte(`"` + s.String() + `"`), nil
+}</span>
+
+// UnmarshalJSON implements json.Unmarshaler to deserialize Status from a string.
+func (s *Status) UnmarshalJSON(data []byte) error <span class="cov8" title="1">{
+        str := string(data)
+        if len(str) &gt;= 2 &amp;&amp; str[0] == '"' &amp;&amp; str[len(str)-1] == '"' </span><span class="cov8" title="1">{
+                str = str[1 : len(str)-1]
+        }</span>
+        <span class="cov8" title="1">switch str </span>{
+        case "UP":<span class="cov8" title="1">
+                *s = StatusUp</span>
+        case "DEGRADED":<span class="cov8" title="1">
+                *s = StatusDegraded</span>
+        case "DOWN":<span class="cov8" title="1">
+                *s = StatusDown</span>
+        default:<span class="cov8" title="1">
+                *s = StatusUnknown</span>
+        }
+        <span class="cov8" title="1">return nil</span>
+}
+
+// IsHealthy returns true if the status is UP or DEGRADED.
+func (s Status) IsHealthy() bool <span class="cov8" title="1">{
+        return s == StatusUp || s == StatusDegraded
+}</span>
+
+// IsUp returns true if the status is UP.
+func (s Status) IsUp() bool <span class="cov8" title="1">{
+        return s == StatusUp
+}</span>
+
+// DepState holds the current state and metadata for a single dependency.
+type DepState struct {
+        ID           string            `json:"id"`
+        Status       Status            `json:"status"`
+        Message      string            `json:"message,omitempty"`
+        LastCheck    time.Time         `json:"last_check"`
+        LastSuccess  *time.Time        `json:"last_success"`
+        LastFailure  *time.Time        `json:"last_failure"`
+        FailureCount int64             `json:"failure_count"`
+        SuccessCount int64             `json:"success_count"`
+        LastLatency  time.Duration     `json:"last_latency,omitempty"`
+        AvgLatency   time.Duration     `json:"avg_latency,omitempty"`
+        Metadata     map[string]string `json:"metadata,omitempty"`
+        CircuitState CircuitState      `json:"circuit_state,omitempty"`
+        mu           sync.RWMutex
+}
+
+// NewDepState creates a new dependency state with the given ID.
+func NewDepState(id string) *DepState <span class="cov8" title="1">{
+        return &amp;DepState{
+                ID:           id,
+                Status:       StatusUp,
+                LastCheck:    time.Now(),
+                Metadata:     make(map[string]string),
+                CircuitState: CircuitClosed,
+        }
+}</span>
+
+// Clone creates a thread-safe copy of the state.
+func (d *DepState) Clone() *DepState <span class="cov8" title="1">{
+        d.mu.RLock()
+        defer d.mu.RUnlock()
+        meta := make(map[string]string, len(d.Metadata))
+        for k, v := range d.Metadata </span><span class="cov8" title="1">{
+                meta[k] = v
+        }</span>
+        <span class="cov8" title="1">var lastSuccess, lastFailure *time.Time
+        if d.LastSuccess != nil </span><span class="cov8" title="1">{
+                t := *d.LastSuccess
+                lastSuccess = &amp;t
+        }</span>
+        <span class="cov8" title="1">if d.LastFailure != nil </span><span class="cov8" title="1">{
+                t := *d.LastFailure
+                lastFailure = &amp;t
+        }</span>
+        <span class="cov8" title="1">return &amp;DepState{
+                ID:           d.ID,
+                Status:       d.Status,
+                Message:      d.Message,
+                LastCheck:    d.LastCheck,
+                LastSuccess:  lastSuccess,
+                LastFailure:  lastFailure,
+                FailureCount: d.FailureCount,
+                SuccessCount: d.SuccessCount,
+                LastLatency:  d.LastLatency,
+                AvgLatency:   d.AvgLatency,
+                Metadata:     meta,
+                CircuitState: d.CircuitState,
+        }</span>
+}
+
+// SetStatus updates the status and timestamp.
+func (d *DepState) SetStatus(status Status, message string) <span class="cov8" title="1">{
+        d.mu.Lock()
+        defer d.mu.Unlock()
+        d.Status = status
+        d.Message = message
+        d.LastCheck = time.Now()
+}</span>
+
+// SetMeta sets a metadata key-value pair.
+func (d *DepState) SetMeta(key, value string) <span class="cov8" title="1">{
+        d.mu.Lock()
+        defer d.mu.Unlock()
+        if d.Metadata == nil </span><span class="cov8" title="1">{
+                d.Metadata = make(map[string]string)
+        }</span>
+        <span class="cov8" title="1">d.Metadata[key] = value</span>
+}
+
+// GetMeta returns the value for a metadata key.
+func (d *DepState) GetMeta(key string) string <span class="cov8" title="1">{
+        d.mu.RLock()
+        defer d.mu.RUnlock()
+        return d.Metadata[key]
+}</span>
+
+// CircuitState represents the state of a circuit breaker.
+type CircuitState int
+
+const (
+        // CircuitClosed allows requests to pass through.
+        CircuitClosed CircuitState = iota
+        // CircuitOpen blocks all requests.
+        CircuitOpen
+        // CircuitHalfOpen allows limited requests for probing.
+        CircuitHalfOpen
+)
+
+// String returns the string representation of the circuit state.
+func (c CircuitState) String() string <span class="cov8" title="1">{
+        switch c </span>{
+        case CircuitClosed:<span class="cov8" title="1">
+                return "CLOSED"</span>
+        case CircuitOpen:<span class="cov8" title="1">
+                return "OPEN"</span>
+        case CircuitHalfOpen:<span class="cov8" title="1">
+                return "HALF_OPEN"</span>
+        default:<span class="cov8" title="1">
+                return "UNKNOWN"</span>
+        }
+}
+</pre>
+		
+		<pre class="file" id="file5" style="display: none">// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: © 2026 Kryovyx
+
+package health
+
+import (
+        "time"
+)
+
+// DepStateStore defines the interface for managing dependency states.
+type DepStateStore interface {
+        // Get returns the current state of a dependency.
+        Get(id string) *DepState
+        // GetAll returns all dependency states.
+        GetAll() map[string]*DepState
+        // Register creates or returns an existing dependency state entry.
+        Register(id string) *DepState
+        // ReportSuccess records a successful operation for a dependency.
+        ReportSuccess(id string, latency time.Duration)
+        // ReportFailure records a failed operation for a dependency.
+        ReportFailure(id string, errType string)
+        // SetStatus explicitly sets the status of a dependency.
+        SetStatus(id string, status Status, message string)
+        // SetCircuitState updates the circuit breaker state for a dependency.
+        SetCircuitState(id string, circuitState CircuitState)
+        // Remove removes a dependency from the store.
+        Remove(id string)
+}
+
+// DepStateStoreConfig configures the behavior of the state store.
+type DepStateStoreConfig struct {
+        // FailureThreshold is the number of consecutive failures to mark as DOWN.
+        FailureThreshold int
+        // DegradedThreshold is the number of consecutive failures to mark as DEGRADED.
+        DegradedThreshold int
+        // WindowDuration is the time window for failure counting.
+        WindowDuration time.Duration
+}
+
+// DefaultDepStateStoreConfig returns default configuration.
+func DefaultDepStateStoreConfig() DepStateStoreConfig <span class="cov8" title="1">{
+        return DepStateStoreConfig{
+                FailureThreshold:  5,
+                DegradedThreshold: 2,
+                WindowDuration:    30 * time.Second,
+        }
+}</span>
+</pre>
+		
+		<pre class="file" id="file6" style="display: none">// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: © 2026 Kryovyx
+
+package health
+
+import (
+        "sync"
+        "time"
+)
+
+// depStateStore is the default implementation of DepStateStore.
+type depStateStore struct {
+        states            map[string]*DepState
+        mu                sync.RWMutex
+        failureThreshold  int
+        degradedThreshold int
+        windowDuration    time.Duration
+}
+
+// NewDepStateStore creates a new dependency state store.
+func NewDepStateStore(cfg DepStateStoreConfig) DepStateStore <span class="cov8" title="1">{
+        return &amp;depStateStore{
+                states:            make(map[string]*DepState),
+                failureThreshold:  cfg.FailureThreshold,
+                degradedThreshold: cfg.DegradedThreshold,
+                windowDuration:    cfg.WindowDuration,
+        }
+}</span>
+
+// Get returns the current state of a dependency.
+func (s *depStateStore) Get(id string) *DepState <span class="cov8" title="1">{
+        s.mu.RLock()
+        defer s.mu.RUnlock()
+        if state, ok := s.states[id]; ok </span><span class="cov8" title="1">{
+                return state.Clone()
+        }</span>
+        <span class="cov8" title="1">return nil</span>
+}
+
+// GetAll returns a copy of all dependency states.
+func (s *depStateStore) GetAll() map[string]*DepState <span class="cov8" title="1">{
+        s.mu.RLock()
+        defer s.mu.RUnlock()
+        result := make(map[string]*DepState, len(s.states))
+        for k, v := range s.states </span><span class="cov8" title="1">{
+                result[k] = v.Clone()
+        }</span>
+        <span class="cov8" title="1">return result</span>
+}
+
+// Register creates or returns an existing dependency state entry.
+func (s *depStateStore) Register(id string) *DepState <span class="cov8" title="1">{
+        s.mu.Lock()
+        defer s.mu.Unlock()
+        if state, ok := s.states[id]; ok </span><span class="cov8" title="1">{
+                return state
+        }</span>
+        <span class="cov8" title="1">state := NewDepState(id)
+        s.states[id] = state
+        return state</span>
+}
+
+// ReportSuccess records a successful operation for a dependency.
+func (s *depStateStore) ReportSuccess(id string, latency time.Duration) <span class="cov8" title="1">{
+        s.mu.Lock()
+        defer s.mu.Unlock()
+        state, ok := s.states[id]
+        if !ok </span><span class="cov8" title="1">{
+                state = NewDepState(id)
+                s.states[id] = state
+        }</span>
+
+        <span class="cov8" title="1">state.mu.Lock()
+        defer state.mu.Unlock()
+
+        state.SuccessCount++
+        now := time.Now()
+        state.LastSuccess = &amp;now
+        state.LastLatency = latency
+        state.LastCheck = now
+
+        // Update average latency (exponential moving average)
+        if state.AvgLatency == 0 </span><span class="cov8" title="1">{
+                state.AvgLatency = latency
+        }</span> else<span class="cov8" title="1"> {
+                alpha := 0.3
+                state.AvgLatency = time.Duration(alpha*float64(latency) + (1-alpha)*float64(state.AvgLatency))
+        }</span>
+
+        // Reset failure tracking on success
+        <span class="cov8" title="1">state.FailureCount = 0
+        state.Status = StatusUp
+        state.Message = ""
+        state.CircuitState = CircuitClosed</span>
+}
+
+// ReportFailure records a failed operation for a dependency.
+func (s *depStateStore) ReportFailure(id string, errType string) <span class="cov8" title="1">{
+        s.mu.Lock()
+        defer s.mu.Unlock()
+        state, ok := s.states[id]
+        if !ok </span><span class="cov8" title="1">{
+                state = NewDepState(id)
+                s.states[id] = state
+        }</span>
+
+        <span class="cov8" title="1">state.mu.Lock()
+        defer state.mu.Unlock()
+
+        state.FailureCount++
+        now := time.Now()
+        state.LastFailure = &amp;now
+        state.LastCheck = now
+        state.Message = errType
+
+        // Update status based on failure count
+        if state.FailureCount &gt;= int64(s.failureThreshold) </span><span class="cov8" title="1">{
+                state.Status = StatusDown
+                state.CircuitState = CircuitOpen
+        }</span> else<span class="cov8" title="1"> if state.FailureCount &gt;= int64(s.degradedThreshold) </span><span class="cov8" title="1">{
+                state.Status = StatusDegraded
+        }</span>
+}
+
+// SetStatus explicitly sets the status of a dependency.
+func (s *depStateStore) SetStatus(id string, status Status, message string) <span class="cov8" title="1">{
+        s.mu.Lock()
+        defer s.mu.Unlock()
+        state, ok := s.states[id]
+        if !ok </span><span class="cov8" title="1">{
+                state = NewDepState(id)
+                s.states[id] = state
+        }</span>
+        <span class="cov8" title="1">state.SetStatus(status, message)</span>
+}
+
+// SetCircuitState updates the circuit breaker state for a dependency.
+func (s *depStateStore) SetCircuitState(id string, circuitState CircuitState) <span class="cov8" title="1">{
+        s.mu.Lock()
+        defer s.mu.Unlock()
+        state, ok := s.states[id]
+        if !ok </span><span class="cov8" title="1">{
+                return // Don't create state just for circuit state
+        }</span>
+        <span class="cov8" title="1">state.mu.Lock()
+        state.CircuitState = circuitState
+        state.mu.Unlock()</span>
+}
+
+// Remove removes a dependency from the store.
+func (s *depStateStore) Remove(id string) <span class="cov8" title="1">{
+        s.mu.Lock()
+        defer s.mu.Unlock()
+        delete(s.states, id)
+}</span>
+</pre>
+		
+		<pre class="file" id="file7" style="display: none">// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: © 2026 Kryovyx
+
+// Package health provides a Rex extension for comprehensive health checking,
+// dependency state management, circuit breaker patterns, and request gating.
+//
+// The extension provides:
+//   - Liveness, readiness, and status endpoints
+//   - Dependency state tracking (UP/DEGRADED/DOWN)
+//   - Health check registry with TTL-cached snapshots
+//   - Middleware for dependency-based request gating
+//   - Circuit breaker integration
+//   - HTTP client wrappers with automatic state reporting
+package health
+
+import (
+        "context"
+        "strings"
+
+        "github.com/kryovyx/dix"
+        rx "github.com/kryovyx/rex"
+        "github.com/kryovyx/rex/event"
+        "github.com/kryovyx/rex/logger"
+)
+
+// HealthRouterName is the default name for the dedicated health router.
+const HealthRouterName = "health"
+
+// HealthExtension implements the Rex extension contract for health checking.
+type HealthExtension struct {
+        cfg           Config
+        routerName    string
+        resolver      dix.Resolver
+        logger        logger.Logger
+        stateStore    DepStateStore
+        registry      Registry
+        snapshotCache SnapshotCache
+        routeDepMap   RouteDepMap
+        checkCache    CheckCache
+}
+
+// NewHealthExtension constructs a health extension instance.
+func NewHealthExtension(cfg *Config) rx.Extension <span class="cov8" title="1">{
+        c := NewDefaultConfig()
+        if cfg != nil </span><span class="cov8" title="1">{
+                if cfg.LivePath != "" </span><span class="cov8" title="1">{
+                        c.LivePath = cfg.LivePath
+                }</span>
+                <span class="cov8" title="1">if cfg.ReadyPath != "" </span><span class="cov8" title="1">{
+                        c.ReadyPath = cfg.ReadyPath
+                }</span>
+                <span class="cov8" title="1">if cfg.StatusPath != "" </span><span class="cov8" title="1">{
+                        c.StatusPath = cfg.StatusPath
+                }</span>
+                <span class="cov8" title="1">if cfg.SnapshotTTL != 0 </span><span class="cov8" title="1">{
+                        c.SnapshotTTL = cfg.SnapshotTTL
+                }</span>
+                <span class="cov8" title="1">c.AtDefaultAddr = cfg.AtDefaultAddr
+                if cfg.Router.Addr != "" </span><span class="cov8" title="1">{
+                        c.Router = cfg.Router
+                }</span>
+                <span class="cov8" title="1">c.StateStoreConfig = cfg.StateStoreConfig
+                c.EnableDependencyGate = cfg.EnableDependencyGate</span>
+        }
+        <span class="cov8" title="1">return &amp;HealthExtension{cfg: *c}</span>
+}
+
+// WithHealth is a helper Option to attach the extension to Rex.
+func WithHealth(cfg *Config) rx.Option <span class="cov8" title="1">{
+        return func(r rx.Rex) </span><span class="cov8" title="1">{
+                r.WithExtensions(NewHealthExtension(cfg))
+        }</span>
+}
+
+// OnInitialize sets up the health infrastructure and event subscriptions.
+func (e *HealthExtension) OnInitialize(ctx context.Context, r rx.Rex) error <span class="cov8" title="1">{
+        logger := r.Logger()
+        e.logger = logger
+
+        // Choose router for health endpoints
+        e.routerName = rx.DefaultRouterName
+        needsDedicatedRouter := !e.cfg.AtDefaultAddr
+        if needsDedicatedRouter </span><span class="cov8" title="1">{
+                e.routerName = HealthRouterName
+        }</span>
+
+        // Store resolver for health checks
+        <span class="cov8" title="1">e.resolver = r.Container()
+
+        // Create core components
+        e.stateStore = NewDepStateStore(e.cfg.StateStoreConfig)
+        e.registry = NewRegistry()
+        e.registry.SetResolver(e.resolver) // Set resolver so checks can access dependencies
+        e.registry.SetLogger(logger)
+        e.snapshotCache = NewSnapshotCache(e.registry, e.stateStore, e.cfg.SnapshotTTL)
+        e.routeDepMap = NewRouteDepMap()
+        e.checkCache = NewCheckCache(e.stateStore, logger)
+
+        // Expose via DI
+        container := r.Container()
+        container.Instance(e.stateStore)
+        container.Instance(e.registry)
+        container.Instance(e.snapshotCache)
+        container.Instance(e.routeDepMap)
+
+        bus := r.EventBus()
+
+        // Subscribe to route registration events
+        bus.Subscribe(event.RouterRouteRegisteredEventType, func(ev event.Event) </span><span class="cov8" title="1">{
+                if routeEv, ok := event.As[event.RouterRouteRegisteredEvent](ev); ok </span><span class="cov8" title="1">{
+                        rt := routeEv.Route
+                        // Check if route implements HealthDepRoute (which embeds route.Route)
+                        if hdr, ok := rt.(HealthDepRoute); ok </span><span class="cov8" title="1">{
+                                routeID := RouteID(rt.Method(), rt.Path())
+                                e.routeDepMap.Register(routeID, hdr.Dependencies())
+                                logger.Info("Registered dependencies for route %s", routeID)
+                        }</span>
+                }
+        })
+
+        <span class="cov8" title="1">logger.Info("Health extension initialized for router %s", e.routerName)
+
+        // Create the dedicated health router if needed
+        if needsDedicatedRouter </span><span class="cov8" title="1">{
+                if err := r.CreateRouter(e.routerName, e.cfg.Router); err != nil </span><span class="cov8" title="1">{
+                        if !strings.Contains(err.Error(), "already exists") </span><span class="cov8" title="1">{
+                                logger.Error("Failed to create health router %s: %v", e.routerName, err)
+                                return err
+                        }</span>
+                }
+        }
+
+        // Register dependency gate middleware if enabled
+        <span class="cov8" title="1">if e.cfg.EnableDependencyGate </span><span class="cov8" title="1">{
+                mwRegistry := r.MiddlewareRegistry()
+                mwCfg := e.MiddlewareConfig()
+                if err := RegisterMiddlewares(mwRegistry, mwCfg); err != nil </span><span class="cov8" title="1">{
+                        logger.Error("Failed to register health middlewares: %v", err)
+                        return err
+                }</span>
+                <span class="cov8" title="1">logger.Info("Registered health dependency gate middlewares")</span>
+        }
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// OnStart registers the health routes and starts the health check ticker.
+func (e *HealthExtension) OnStart(ctx context.Context, r rx.Rex) error <span class="cov8" title="1">{
+        logger := r.Logger()
+
+        // Start the health check ticker if interval is configured
+        if e.cfg.CheckInterval &gt; 0 </span><span class="cov8" title="1">{
+                e.registry.Start(e.cfg.CheckInterval, e.stateStore)
+                logger.Info("Started health check ticker with interval %s", e.cfg.CheckInterval)
+        }</span>
+
+        // Create routes
+        <span class="cov8" title="1">liveRoute := newLiveRoute(e.cfg.LivePath)
+        readyRoute := newReadyRoute(e.cfg.ReadyPath, e.snapshotCache)
+        statusRoute := newStatusRoute(e.cfg.StatusPath, e.snapshotCache, e.stateStore)
+
+        var err error
+        if e.cfg.AtDefaultAddr </span><span class="cov8" title="1">{
+                if err = r.RegisterRoute(liveRoute); err != nil </span><span class="cov8" title="1">{
+                        logger.Error("Failed to register live route: %v", err)
+                        return err
+                }</span>
+                <span class="cov8" title="1">if err = r.RegisterRoute(readyRoute); err != nil </span><span class="cov8" title="1">{
+                        logger.Error("Failed to register ready route: %v", err)
+                        return err
+                }</span>
+                <span class="cov8" title="1">if err = r.RegisterRoute(statusRoute); err != nil </span><span class="cov8" title="1">{
+                        logger.Error("Failed to register status route: %v", err)
+                        return err
+                }</span>
+        } else<span class="cov8" title="1"> {
+                if err = r.RegisterRouteToRouter(liveRoute, e.routerName); err != nil </span><span class="cov8" title="1">{
+                        logger.Error("Failed to register live route: %v", err)
+                        return err
+                }</span>
+                <span class="cov8" title="1">if err = r.RegisterRouteToRouter(readyRoute, e.routerName); err != nil </span><span class="cov8" title="1">{
+                        logger.Error("Failed to register ready route: %v", err)
+                        return err
+                }</span>
+                <span class="cov8" title="1">if err = r.RegisterRouteToRouter(statusRoute, e.routerName); err != nil </span><span class="cov8" title="1">{
+                        logger.Error("Failed to register status route: %v", err)
+                        return err
+                }</span>
+        }
+
+        <span class="cov8" title="1">logger.Info("Registered health routes on router %s (%s, %s, %s)",
+                e.routerName, e.cfg.LivePath, e.cfg.ReadyPath, e.cfg.StatusPath)
+
+        return nil</span>
+}
+
+// OnReady is a no-op for health.
+func (e *HealthExtension) OnReady(ctx context.Context, r rx.Rex) error <span class="cov8" title="1">{ return nil }</span>
+
+// OnStop stops the health check ticker.
+func (e *HealthExtension) OnStop(ctx context.Context, r rx.Rex) error <span class="cov8" title="1">{
+        e.registry.Stop()
+        r.Logger().Info("Stopped health check ticker")
+        return nil
+}</span>
+
+// OnShutdown cleans up resources.
+func (e *HealthExtension) OnShutdown(ctx context.Context, r rx.Rex) error <span class="cov8" title="1">{
+        logger := r.Logger()
+        logger.Info("Health extension shutdown complete")
+        return nil
+}</span>
+
+// Registry returns the health check registry.
+func (e *HealthExtension) Registry() Registry <span class="cov8" title="1">{
+        return e.registry
+}</span>
+
+// StateStore returns the dependency state store.
+func (e *HealthExtension) StateStore() DepStateStore <span class="cov8" title="1">{
+        return e.stateStore
+}</span>
+
+// SnapshotCache returns the snapshot cache.
+func (e *HealthExtension) SnapshotCache() SnapshotCache <span class="cov8" title="1">{
+        return e.snapshotCache
+}</span>
+
+// RouteDepMap returns the route dependency map.
+func (e *HealthExtension) RouteDepMap() RouteDepMap <span class="cov8" title="1">{
+        return e.routeDepMap
+}</span>
+
+// CheckCache returns the check cache for passive checks.
+func (e *HealthExtension) CheckCache() CheckCache <span class="cov8" title="1">{
+        return e.checkCache
+}</span>
+
+// MiddlewareConfig returns a configured MiddlewareConfig for the dependency gate.
+func (e *HealthExtension) MiddlewareConfig() MiddlewareConfig <span class="cov8" title="1">{
+        return MiddlewareConfig{
+                RouteDepMap:   e.routeDepMap,
+                StateStore:    e.stateStore,
+                SnapshotCache: e.snapshotCache,
+                Registry:      e.registry,
+                CheckCache:    e.checkCache,
+                Resolver:      e.resolver,
+                UseCache:      true,
+        }
+}</span>
+
+// RegisterCheck registers a health check with the extension's registry.
+// This is a convenience method that allows registering checks directly on the extension.
+func (e *HealthExtension) RegisterCheck(check HealthCheck) <span class="cov8" title="1">{
+        e.registry.Register(check)
+}</span>
+
+// RegisterCheckFunc registers a health check function with the extension's registry.
+// This is a convenience method for simple health checks without options.
+func (e *HealthExtension) RegisterCheckFunc(name string, fn CheckFunc, opts ...CheckOption) <span class="cov8" title="1">{
+        e.registry.Register(NewCheck(name, fn, opts...))
+}</span>
+</pre>
+		
+		<pre class="file" id="file8" style="display: none">// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: © 2026 Kryovyx
+
+package health
+
+import (
+        "context"
+        "time"
+
+        "github.com/kryovyx/dix"
+)
+
+// CheckMode determines when a health check is executed.
+type CheckMode int
+
+const (
+        // CheckModeActive runs the check periodically at CheckInterval (concurrent polling).
+        // Use for critical dependencies that must be monitored continuously.
+        CheckModeActive CheckMode = iota
+        // CheckModePassive runs the check on-demand when a route needs it (lazy evaluation).
+        // Results are cached for CacheTTL. Use for optional deps or expensive checks.
+        CheckModePassive
+        // CheckModeOnDemand is like Passive but never caches (CacheTTL forced to zero).
+        // Each gate triggers a fresh execution.
+        CheckModeOnDemand
+)
+
+// String returns the string representation of the check mode.
+func (m CheckMode) String() string <span class="cov8" title="1">{
+        switch m </span>{
+        case CheckModeActive:<span class="cov8" title="1">
+                return "ACTIVE"</span>
+        case CheckModePassive:<span class="cov8" title="1">
+                return "PASSIVE"</span>
+        case CheckModeOnDemand:<span class="cov8" title="1">
+                return "ON_DEMAND"</span>
+        default:<span class="cov8" title="1">
+                return "UNKNOWN"</span>
+        }
+}
+
+// CheckResult represents the result of a health check execution.
+type CheckResult struct {
+        Status    Status            `json:"status"`
+        Message   string            `json:"message,omitempty"`
+        Duration  time.Duration     `json:"duration"`
+        Timestamp time.Time         `json:"timestamp"`
+        Metadata  map[string]string `json:"metadata,omitempty"`
+}
+
+// NewCheckResult creates a new check result.
+func NewCheckResult(status Status, message string, duration time.Duration) *CheckResult <span class="cov8" title="1">{
+        return &amp;CheckResult{
+                Status:    status,
+                Message:   message,
+                Duration:  duration,
+                Timestamp: time.Now(),
+        }
+}</span>
+
+// HealthCheck defines the interface for health check implementations.
+type HealthCheck interface {
+        // Name returns the unique name of this check.
+        Name() string
+        // Execute performs the health check and returns the result.
+        Execute(ctx context.Context) *CheckResult
+        // Timeout returns the maximum duration for this check.
+        Timeout() time.Duration
+        // IsReadiness returns true if this check affects readiness.
+        IsReadiness() bool
+        // Tags returns the tags associated with this check.
+        Tags() []string
+        // Mode returns the check mode (Active, Passive, or OnDemand).
+        Mode() CheckMode
+        // CacheTTL returns how long to cache results (for Passive checks).
+        CacheTTL() time.Duration
+}
+
+// CheckFunc is a function type that implements a health check.
+// The resolver provides access to dependencies registered in the DI container.
+type CheckFunc func(ctx context.Context, resolver dix.Resolver) *CheckResult
+
+// checkImpl is the default HealthCheck implementation.
+type checkImpl struct {
+        name      string
+        fn        CheckFunc
+        resolver  dix.Resolver
+        timeout   time.Duration
+        readiness bool
+        tags      []string
+        mode      CheckMode
+        cacheTTL  time.Duration
+}
+
+// CheckOption configures a health check.
+type CheckOption func(*checkImpl)
+
+// WithTimeout sets the timeout for a health check.
+func WithTimeout(d time.Duration) CheckOption <span class="cov8" title="1">{
+        return func(c *checkImpl) </span><span class="cov8" title="1">{
+                c.timeout = d
+        }</span>
+}
+
+// WithReadiness marks the check as affecting readiness.
+func WithReadiness(readiness bool) CheckOption <span class="cov8" title="1">{
+        return func(c *checkImpl) </span><span class="cov8" title="1">{
+                c.readiness = readiness
+        }</span>
+}
+
+// WithTags adds tags to the health check.
+func WithTags(tags ...string) CheckOption <span class="cov8" title="1">{
+        return func(c *checkImpl) </span><span class="cov8" title="1">{
+                c.tags = append(c.tags, tags...)
+        }</span>
+}
+
+// WithCheckMode sets the check mode (Active, Passive, or OnDemand).
+// Active checks run periodically at CheckInterval.
+// Passive checks run on-demand when gating and cache results for CacheTTL.
+// OnDemand checks run on-demand with caching disabled (CacheTTL forced to zero).
+func WithCheckMode(mode CheckMode) CheckOption <span class="cov8" title="1">{
+        return func(c *checkImpl) </span><span class="cov8" title="1">{
+                c.mode = mode
+        }</span>
+}
+
+// WithCacheTTL sets how long to cache results for Passive checks.
+// Default is 30 seconds. Ignored when mode is OnDemand (always zero).
+func WithCacheTTL(ttl time.Duration) CheckOption <span class="cov8" title="1">{
+        return func(c *checkImpl) </span><span class="cov8" title="1">{
+                c.cacheTTL = ttl
+        }</span>
+}
+
+// NewCheck creates a new health check with the given name and function.
+func NewCheck(name string, fn CheckFunc, opts ...CheckOption) HealthCheck <span class="cov8" title="1">{
+        c := &amp;checkImpl{
+                name:      name,
+                fn:        fn,
+                timeout:   5 * time.Second,
+                readiness: true,
+                tags:      make([]string, 0),
+                mode:      CheckModeActive,  // Default to active
+                cacheTTL:  30 * time.Second, // Default cache TTL for passive
+        }
+        for _, opt := range opts </span><span class="cov8" title="1">{
+                opt(c)
+        }</span>
+        // Force on-demand checks to never cache regardless of option order
+        <span class="cov8" title="1">if c.mode == CheckModeOnDemand </span><span class="cov8" title="1">{
+                c.cacheTTL = 0
+        }</span>
+        <span class="cov8" title="1">return c</span>
+}
+
+func (c *checkImpl) Name() string            <span class="cov8" title="1">{ return c.name }</span>
+func (c *checkImpl) Timeout() time.Duration  <span class="cov8" title="1">{ return c.timeout }</span>
+func (c *checkImpl) IsReadiness() bool       <span class="cov8" title="1">{ return c.readiness }</span>
+func (c *checkImpl) Tags() []string          <span class="cov8" title="1">{ return c.tags }</span>
+func (c *checkImpl) Mode() CheckMode         <span class="cov8" title="1">{ return c.mode }</span>
+func (c *checkImpl) CacheTTL() time.Duration <span class="cov8" title="1">{ return c.cacheTTL }</span>
+
+// SetResolver sets the resolver for this health check.
+func (c *checkImpl) SetResolver(resolver dix.Resolver) <span class="cov8" title="1">{
+        c.resolver = resolver
+}</span>
+
+func (c *checkImpl) Execute(ctx context.Context) *CheckResult <span class="cov8" title="1">{
+        // Apply timeout
+        ctx, cancel := context.WithTimeout(ctx, c.timeout)
+        defer cancel()
+
+        start := time.Now()
+        resultCh := make(chan *CheckResult, 1)
+
+        go func() </span><span class="cov8" title="1">{
+                defer func() </span><span class="cov8" title="1">{
+                        if r := recover(); r != nil </span><span class="cov8" title="1">{
+                                resultCh &lt;- NewCheckResult(StatusDown, "panic during check", time.Since(start))
+                        }</span>
+                }()
+                <span class="cov8" title="1">resultCh &lt;- c.fn(ctx, c.resolver)</span>
+        }()
+
+        <span class="cov8" title="1">select </span>{
+        case result := &lt;-resultCh:<span class="cov8" title="1">
+                result.Duration = time.Since(start)
+                result.Timestamp = time.Now()
+                return result</span>
+        case &lt;-ctx.Done():<span class="cov8" title="1">
+                return NewCheckResult(StatusDown, "check timed out", time.Since(start))</span>
+        }
+}
+
+// DependencyCheck creates a check that monitors a dependency from the state store.
+type DependencyCheck struct {
+        depID     string
+        store     DepStateStore
+        name      string
+        readiness bool
+        tags      []string
+}
+
+// NewDependencyCheck creates a check that reflects dependency state.
+func NewDependencyCheck(name, depID string, store DepStateStore, readiness bool, tags ...string) HealthCheck <span class="cov8" title="1">{
+        return &amp;DependencyCheck{
+                name:      name,
+                depID:     depID,
+                store:     store,
+                readiness: readiness,
+                tags:      tags,
+        }
+}</span>
+
+func (d *DependencyCheck) Name() string            <span class="cov8" title="1">{ return d.name }</span>
+func (d *DependencyCheck) Timeout() time.Duration  <span class="cov8" title="1">{ return time.Second }</span>
+func (d *DependencyCheck) IsReadiness() bool       <span class="cov8" title="1">{ return d.readiness }</span>
+func (d *DependencyCheck) Tags() []string          <span class="cov8" title="1">{ return d.tags }</span>
+func (d *DependencyCheck) Mode() CheckMode         <span class="cov8" title="1">{ return CheckModeActive }</span>
+func (d *DependencyCheck) CacheTTL() time.Duration <span class="cov8" title="1">{ return 0 }</span>
+
+func (d *DependencyCheck) Execute(ctx context.Context) *CheckResult <span class="cov8" title="1">{
+        state := d.store.Get(d.depID)
+        if state == nil </span><span class="cov8" title="1">{
+                return NewCheckResult(StatusUp, "no data yet", 0)
+        }</span>
+        <span class="cov8" title="1">result := NewCheckResult(state.Status, state.Message, state.LastLatency)
+        result.Metadata = state.Metadata
+        return result</span>
+}
+</pre>
+		
+		<pre class="file" id="file9" style="display: none">// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: © 2026 Kryovyx
+
+package health
+
+import (
+        "github.com/kryovyx/rex/route"
+)
+
+// HealthDepRoute extends route.Route with dependency declaration.
+// Routes implementing this interface will have their dependencies
+// automatically registered with the health extension.
+type HealthDepRoute interface {
+        route.Route
+        // Dependencies returns the list of dependency requirements for this route.
+        Dependencies() []DepRequirement
+}
+
+// healthDepRoute is a wrapper that adds dependency information to a route.
+type healthDepRoute struct {
+        route.Route
+        deps []DepRequirement
+}
+
+// NewHealthDepRoute wraps a route with dependency requirements.
+func NewHealthDepRoute(rt route.Route, deps ...DepRequirement) HealthDepRoute <span class="cov8" title="1">{
+        return &amp;healthDepRoute{
+                Route: rt,
+                deps:  deps,
+        }
+}</span>
+
+// Dependencies returns the dependency requirements for this route.
+func (r *healthDepRoute) Dependencies() []DepRequirement <span class="cov8" title="1">{
+        return r.deps
+}</span>
+
+// NewRouteWithDeps creates a new route with dependency requirements.
+func NewRouteWithDeps(method, path string, handler route.HandlerFunc, deps ...DepRequirement) HealthDepRoute <span class="cov8" title="1">{
+        return &amp;healthDepRoute{
+                Route: route.New(method, path, handler),
+                deps:  deps,
+        }
+}</span>
+</pre>
+		
+		<pre class="file" id="file10" style="display: none">// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: © 2026 Kryovyx
+
+// Package health provides a Rex extension for comprehensive health checking.
+//
+// This file defines the middleware interfaces and context helpers.
+package health
+
+import (
+        "context"
+        "fmt"
+
+        rx "github.com/kryovyx/rex"
+        "github.com/kryovyx/rex/middleware"
+)
+
+// Context keys for dependency state in request context.
+type contextKey string
+
+const (
+        // ContextKeyRouteID stores the resolved route ID in context.
+        ContextKeyRouteID contextKey = "health:route_id"
+        // ContextKeyDepStates stores dependency states in context.
+        ContextKeyDepStates contextKey = "health:dep_states"
+        // ContextKeyDegradedDeps stores degraded dependency IDs in context.
+        ContextKeyDegradedDeps contextKey = "health:degraded_deps"
+)
+
+// DepStateContext holds dependency state information for a request.
+type DepStateContext struct {
+        RouteID      string
+        Dependencies map[string]*DepState
+        DegradedDeps []string
+}
+
+// GetDepStateContext retrieves the dependency state context from a request context.
+func GetDepStateContext(ctx context.Context) *DepStateContext <span class="cov8" title="1">{
+        if val := ctx.Value(ContextKeyDepStates); val != nil </span><span class="cov8" title="1">{
+                if dsc, ok := val.(*DepStateContext); ok </span><span class="cov8" title="1">{
+                        return dsc
+                }</span>
+        }
+        <span class="cov8" title="1">return nil</span>
+}
+
+// IsDegraded checks if a specific dependency is marked as degraded in context.
+func IsDegraded(ctx context.Context, depID string) bool <span class="cov8" title="1">{
+        dsc := GetDepStateContext(ctx)
+        if dsc == nil </span><span class="cov8" title="1">{
+                return false
+        }</span>
+        <span class="cov8" title="1">for _, d := range dsc.DegradedDeps </span><span class="cov8" title="1">{
+                if d == depID </span><span class="cov8" title="1">{
+                        return true
+                }</span>
+        }
+        <span class="cov8" title="1">return false</span>
+}
+
+// GetDepState retrieves the state of a specific dependency from context.
+func GetDepState(ctx context.Context, depID string) *DepState <span class="cov8" title="1">{
+        dsc := GetDepStateContext(ctx)
+        if dsc == nil </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+        <span class="cov8" title="1">return dsc.Dependencies[depID]</span>
+}
+
+// MiddlewareConfig configures the dependency gate middleware.
+type MiddlewareConfig struct {
+        // RouteDepMap for looking up route dependencies.
+        RouteDepMap RouteDepMap
+        // StateStore for getting dependency states.
+        StateStore DepStateStore
+        // SnapshotCache for cached state lookups.
+        SnapshotCache SnapshotCache
+        // Registry for looking up health checks (needed for passive checks).
+        Registry Registry
+        // CheckCache for executing and caching passive checks on-demand.
+        CheckCache CheckCache
+        // Resolver for executing checks that need DI.
+        Resolver interface{}
+        // FailureStatusCode is the HTTP status code for hard failures (default: 503).
+        FailureStatusCode int
+        // FailureMessage is the response message for hard failures.
+        FailureMessage string
+        // UseCache determines whether to use SnapshotCache or direct StateStore.
+        UseCache bool
+}
+
+// DefaultMiddlewareConfig returns the default middleware configuration.
+func DefaultMiddlewareConfig() MiddlewareConfig <span class="cov8" title="1">{
+        return MiddlewareConfig{
+                FailureStatusCode: 503,
+                FailureMessage:    "Service temporarily unavailable",
+                UseCache:          true,
+        }
+}</span>
+
+// DependencyGateError represents a dependency gate failure.
+type DependencyGateError struct {
+        DepID      string
+        Status     Status
+        StatusCode int
+        Message    string
+}
+
+func (e *DependencyGateError) Error() string <span class="cov8" title="1">{
+        return fmt.Sprintf("dependency %s is %s: %s", e.DepID, e.Status, e.Message)
+}</span>
+
+// MiddlewareNames for registration in the middleware chain.
+const (
+        MiddlewareNameRouteResolver  = "health:route-resolver"
+        MiddlewareNameDependencyGate = "health:dependency-gate"
+)
+
+// RegisterMiddlewares registers all health middlewares to the request chain in the registry.
+func RegisterMiddlewares(registry middleware.Registry, cfg MiddlewareConfig) error <span class="cov8" title="1">{
+        // Get or create the request chain (use Rex's ChainRequest constant)
+        chain, ok := registry.Get(rx.ChainRequest)
+        if !ok </span><span class="cov8" title="1">{
+                chain = middleware.NewChain()
+                registry.Set(rx.ChainRequest, chain)
+        }</span>
+
+        // Route resolver should come first
+        <span class="cov8" title="1">if !chain.Exists(MiddlewareNameRouteResolver) </span><span class="cov8" title="1">{
+                if err := chain.Append(MiddlewareNameRouteResolver, RouteResolverMiddleware()); err != nil </span><span class="cov8" title="1">{
+                        return fmt.Errorf("failed to register route resolver middleware: %w", err)
+                }</span>
+        }
+
+        // Dependency gate after route resolver
+        <span class="cov8" title="1">if !chain.Exists(MiddlewareNameDependencyGate) </span><span class="cov8" title="1">{
+                if err := chain.After(MiddlewareNameRouteResolver, MiddlewareNameDependencyGate, DependencyGateMiddleware(cfg)); err != nil </span><span class="cov8" title="1">{
+                        return fmt.Errorf("failed to register dependency gate middleware: %w", err)
+                }</span>
+        }
+
+        <span class="cov8" title="1">return nil</span>
+}
+
+// RegisterMiddlewaresToChain registers health middlewares to a specific chain.
+// Use this when you want to register to a custom chain instead of the default request chain.
+func RegisterMiddlewaresToChain(chain middleware.Chain, cfg MiddlewareConfig) error <span class="cov8" title="1">{
+        // Route resolver should come first
+        if err := chain.Append(MiddlewareNameRouteResolver, RouteResolverMiddleware()); err != nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("failed to register route resolver middleware: %w", err)
+        }</span>
+
+        // Dependency gate after route resolver
+        <span class="cov8" title="1">if err := chain.After(MiddlewareNameRouteResolver, MiddlewareNameDependencyGate, DependencyGateMiddleware(cfg)); err != nil </span><span class="cov8" title="1">{
+                return fmt.Errorf("failed to register dependency gate middleware: %w", err)
+        }</span>
+
+        <span class="cov8" title="1">return nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file11" style="display: none">// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: © 2026 Kryovyx
+
+package health
+
+import (
+        "context"
+        "fmt"
+        "net/http"
+
+        "github.com/kryovyx/dix"
+        "github.com/kryovyx/rex/middleware"
+        "github.com/kryovyx/rex/route"
+)
+
+// DependencyGateMiddleware creates a Rex middleware that gates requests based on dependency health.
+// It checks hard dependencies and fails fast if they are down.
+// Soft dependencies are marked in context for handler fallback logic.
+//
+// For passive checks (CheckModePassive), the middleware will execute the check on-demand
+// with result caching, rather than relying on background polling.
+func DependencyGateMiddleware(cfg MiddlewareConfig) middleware.MiddlewareFunc <span class="cov8" title="1">{
+        return func(next middleware.HandlerFunc) middleware.HandlerFunc </span><span class="cov8" title="1">{
+                return func(c context.Context) error </span><span class="cov8" title="1">{
+                        // Try to get route context using ContextAs
+                        var routeID string
+                        if rc, ok := middleware.ContextAs[route.Context](c); ok </span><span class="cov8" title="1">{
+                                req := rc.Request()
+                                routeID = RouteID(req.Method, req.URL.Path)
+                        }</span> else<span class="cov8" title="1"> {
+                                // Fallback: try to get from context value
+                                routeID, _ = c.Value(ContextKeyRouteID).(string)
+                        }</span>
+
+                        <span class="cov8" title="1">if routeID == "" </span><span class="cov8" title="1">{
+                                // No route ID, pass through
+                                return next(c)
+                        }</span>
+
+                        // Get route dependencies
+                        <span class="cov8" title="1">if cfg.RouteDepMap == nil </span><span class="cov8" title="1">{
+                                return next(c)
+                        }</span>
+
+                        <span class="cov8" title="1">deps := cfg.RouteDepMap.Get(routeID)
+                        if len(deps) == 0 </span><span class="cov8" title="1">{
+                                // No dependencies declared, pass through
+                                return next(c)
+                        }</span>
+
+                        // Build dependency state context
+                        <span class="cov8" title="1">dsc := &amp;DepStateContext{
+                                RouteID:      routeID,
+                                Dependencies: make(map[string]*DepState),
+                                DegradedDeps: make([]string, 0),
+                        }
+
+                        // Get current dependency states (for active checks)
+                        var states map[string]*DepState
+                        if cfg.UseCache &amp;&amp; cfg.SnapshotCache != nil </span><span class="cov8" title="1">{
+                                snap := cfg.SnapshotCache.Get(c)
+                                states = snap.Dependencies
+                        }</span> else<span class="cov8" title="1"> if cfg.StateStore != nil </span><span class="cov8" title="1">{
+                                states = cfg.StateStore.GetAll()
+                        }</span>
+
+                        // Get resolver for passive checks
+                        <span class="cov8" title="1">var resolver dix.Resolver
+                        if cfg.Resolver != nil </span><span class="cov8" title="1">{
+                                resolver, _ = cfg.Resolver.(dix.Resolver)
+                        }</span>
+
+                        // Check each dependency
+                        <span class="cov8" title="1">for _, req := range deps </span><span class="cov8" title="1">{
+                                state := states[req.DepID]
+
+                                // Check if this is a passive check that needs on-demand execution
+                                if state == nil || shouldExecutePassiveCheck(cfg, req.DepID, state) </span><span class="cov8" title="1">{
+                                        if passiveState := executePassiveCheckIfNeeded(c, cfg, req.DepID, resolver); passiveState != nil </span><span class="cov8" title="1">{
+                                                state = passiveState
+                                        }</span>
+                                }
+
+                                <span class="cov8" title="1">if state == nil </span><span class="cov8" title="1">{
+                                        // No data yet: treat as unknown so hard deps fail fast instead of assuming UP
+                                        state = NewDepState(req.DepID)
+                                        state.Status = StatusUnknown
+                                        state.Message = "no data yet"
+                                }</span>
+                                <span class="cov8" title="1">dsc.Dependencies[req.DepID] = state
+
+                                // Check if dependency meets minimum status
+                                if state.Status &gt; req.MinStatus </span><span class="cov8" title="1">{
+                                        if req.Type == RequirementHard </span><span class="cov8" title="1">{
+                                                // Hard dependency failed - return error
+                                                statusCode := cfg.FailureStatusCode
+                                                if statusCode == 0 </span><span class="cov8" title="1">{
+                                                        statusCode = 503
+                                                }</span>
+                                                <span class="cov8" title="1">msg := cfg.FailureMessage
+                                                if msg == "" </span><span class="cov8" title="1">{
+                                                        msg = fmt.Sprintf("Dependency %s is %s", req.DepID, state.Status)
+                                                }</span>
+
+                                                // If we have route.Context, respond directly and short-circuit
+                                                <span class="cov8" title="1">if rc, ok := middleware.ContextAs[route.Context](c); ok </span><span class="cov8" title="1">{
+                                                        _ = rc.Text(statusCode, msg)
+                                                        return &amp;DependencyGateError{
+                                                                DepID:      req.DepID,
+                                                                Status:     state.Status,
+                                                                StatusCode: statusCode,
+                                                                Message:    msg,
+                                                        }
+                                                }</span>
+
+                                                <span class="cov8" title="1">return &amp;DependencyGateError{
+                                                        DepID:      req.DepID,
+                                                        Status:     state.Status,
+                                                        StatusCode: statusCode,
+                                                        Message:    msg,
+                                                }</span>
+                                        }
+                                        // Soft dependency degraded - mark for fallback
+                                        <span class="cov8" title="1">dsc.DegradedDeps = append(dsc.DegradedDeps, req.DepID)</span>
+                                }
+                        }
+
+                        // Store dependency context in context values
+                        <span class="cov8" title="1">ctx := context.WithValue(c, ContextKeyDepStates, dsc)
+                        return next(ctx)</span>
+                }
+        }
+}
+
+// shouldExecutePassiveCheck determines if a passive or on-demand check should be executed on-demand.
+func shouldExecutePassiveCheck(cfg MiddlewareConfig, depID string, state *DepState) bool <span class="cov8" title="1">{
+        if cfg.Registry == nil </span><span class="cov8" title="1">{
+                return false
+        }</span>
+
+        <span class="cov8" title="1">check := cfg.Registry.Get(depID)
+        if check == nil </span><span class="cov8" title="1">{
+                return false
+        }</span>
+
+        // Only passive/on-demand checks are executed on-demand
+        <span class="cov8" title="1">return check.Mode() == CheckModePassive || check.Mode() == CheckModeOnDemand</span>
+}
+
+// executePassiveCheckIfNeeded executes a passive check on-demand using the cache.
+func executePassiveCheckIfNeeded(ctx context.Context, cfg MiddlewareConfig, depID string, resolver dix.Resolver) *DepState <span class="cov8" title="1">{
+        if cfg.Registry == nil || cfg.CheckCache == nil </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+
+        <span class="cov8" title="1">check := cfg.Registry.Get(depID)
+        if check == nil || (check.Mode() != CheckModePassive &amp;&amp; check.Mode() != CheckModeOnDemand) </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+
+        // Execute through cache (returns cached result if fresh)
+        <span class="cov8" title="1">result := cfg.CheckCache.GetOrExecute(ctx, check)
+        if result == nil </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+
+        // Convert result to DepState
+        <span class="cov8" title="1">state := NewDepState(depID)
+        state.Status = result.Status
+        state.Message = result.Message
+        state.LastCheck = result.Timestamp
+
+        return state</span>
+}
+
+// RouteResolverMiddleware creates a Rex middleware that sets the route ID in context.
+// This should be applied early in the middleware chain.
+func RouteResolverMiddleware() middleware.MiddlewareFunc <span class="cov8" title="1">{
+        return func(next middleware.HandlerFunc) middleware.HandlerFunc </span><span class="cov8" title="1">{
+                return func(c context.Context) error </span><span class="cov8" title="1">{
+                        // Preserve the original route.Context so downstream middlewares can write responses.
+                        // When we already have route.Context, stash route ID via SetValue to avoid wrapping.
+                        if rc, ok := middleware.ContextAs[route.Context](c); ok </span><span class="cov8" title="1">{
+                                req := rc.Request()
+                                routeID := RouteID(req.Method, req.URL.Path)
+                                if routeID != "" </span><span class="cov8" title="1">{
+                                        rc.SetValue(ContextKeyRouteID, routeID)
+                                }</span>
+                                <span class="cov8" title="1">return next(rc)</span>
+                        }
+
+                        // Fallback: no route.Context available, compute and stash route ID in a derived context
+                        <span class="cov8" title="1">if reqCtx, ok := middleware.ContextAs[*http.Request](c); ok </span><span class="cov0" title="0">{
+                                routeID := RouteID(reqCtx.Method, reqCtx.URL.Path)
+                                if routeID != "" </span><span class="cov0" title="0">{
+                                        c = context.WithValue(c, ContextKeyRouteID, routeID)
+                                }</span>
+                        }
+
+                        <span class="cov8" title="1">return next(c)</span>
+                }
+        }
+}
+
+// DepContextMiddleware creates a Rex middleware that injects dependency states into context.
+// This allows handlers to check dependency states for fallback logic without gating.
+func DepContextMiddleware(stateStore DepStateStore, depIDs ...string) middleware.MiddlewareFunc <span class="cov8" title="1">{
+        return func(next middleware.HandlerFunc) middleware.HandlerFunc </span><span class="cov8" title="1">{
+                return func(c context.Context) error </span><span class="cov8" title="1">{
+                        dsc := &amp;DepStateContext{
+                                Dependencies: make(map[string]*DepState),
+                                DegradedDeps: make([]string, 0),
+                        }
+
+                        // Fetch states for specified dependencies
+                        for _, depID := range depIDs </span><span class="cov8" title="1">{
+                                state := stateStore.Get(depID)
+                                if state != nil </span><span class="cov8" title="1">{
+                                        dsc.Dependencies[depID] = state
+                                        if state.Status == StatusDegraded </span><span class="cov8" title="1">{
+                                                dsc.DegradedDeps = append(dsc.DegradedDeps, depID)
+                                        }</span>
+                                }
+                        }
+
+                        <span class="cov8" title="1">ctx := context.WithValue(c, ContextKeyDepStates, dsc)
+                        return next(ctx)</span>
+                }
+        }
+}
+</pre>
+		
+		<pre class="file" id="file12" style="display: none">// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: © 2026 Kryovyx
+
+package health
+
+import (
+        "context"
+        "sync"
+        "time"
+
+        "github.com/kryovyx/dix"
+        "github.com/kryovyx/rex/logger"
+)
+
+// registry is the default implementation of Registry.
+type registry struct {
+        checks   map[string]HealthCheck
+        mu       sync.RWMutex
+        stopChan chan struct{}
+        running  bool
+        resolver dix.Resolver
+        logger   logger.Logger
+}
+
+// NewRegistry creates a new health check registry.
+func NewRegistry() Registry <span class="cov8" title="1">{
+        return &amp;registry{
+                checks: make(map[string]HealthCheck),
+        }
+}</span>
+
+// Register adds a health check to the registry.
+func (r *registry) Register(check HealthCheck) <span class="cov8" title="1">{
+        r.mu.Lock()
+        defer r.mu.Unlock()
+        // Set resolver on the check if it supports it
+        if setter, ok := check.(interface{ SetResolver(dix.Resolver) }); ok &amp;&amp; r.resolver != nil </span><span class="cov8" title="1">{
+                setter.SetResolver(r.resolver)
+        }</span>
+        <span class="cov8" title="1">r.checks[check.Name()] = check</span>
+}
+
+// Unregister removes a health check by name.
+func (r *registry) Unregister(name string) <span class="cov8" title="1">{
+        r.mu.Lock()
+        defer r.mu.Unlock()
+        delete(r.checks, name)
+}</span>
+
+// Get returns a health check by name.
+func (r *registry) Get(name string) HealthCheck <span class="cov8" title="1">{
+        r.mu.RLock()
+        defer r.mu.RUnlock()
+        return r.checks[name]
+}</span>
+
+// GetAll returns all registered health checks.
+func (r *registry) GetAll() []HealthCheck <span class="cov8" title="1">{
+        r.mu.RLock()
+        defer r.mu.RUnlock()
+        result := make([]HealthCheck, 0, len(r.checks))
+        for _, check := range r.checks </span><span class="cov8" title="1">{
+                result = append(result, check)
+        }</span>
+        <span class="cov8" title="1">return result</span>
+}
+
+// GetByTags returns checks matching any of the given tags.
+func (r *registry) GetByTags(tags ...string) []HealthCheck <span class="cov8" title="1">{
+        r.mu.RLock()
+        defer r.mu.RUnlock()
+        tagSet := make(map[string]bool)
+        for _, t := range tags </span><span class="cov8" title="1">{
+                tagSet[t] = true
+        }</span>
+        <span class="cov8" title="1">var result []HealthCheck
+        for _, check := range r.checks </span><span class="cov8" title="1">{
+                for _, t := range check.Tags() </span><span class="cov8" title="1">{
+                        if tagSet[t] </span><span class="cov8" title="1">{
+                                result = append(result, check)
+                                break</span>
+                        }
+                }
+        }
+        <span class="cov8" title="1">return result</span>
+}
+
+// GetReadinessChecks returns all checks affecting readiness.
+func (r *registry) GetReadinessChecks() []HealthCheck <span class="cov8" title="1">{
+        r.mu.RLock()
+        defer r.mu.RUnlock()
+        var result []HealthCheck
+        for _, check := range r.checks </span><span class="cov8" title="1">{
+                if check.IsReadiness() </span><span class="cov8" title="1">{
+                        result = append(result, check)
+                }</span>
+        }
+        <span class="cov8" title="1">return result</span>
+}
+
+// GetActiveChecks returns all checks with mode Active.
+func (r *registry) GetActiveChecks() []HealthCheck <span class="cov8" title="1">{
+        r.mu.RLock()
+        defer r.mu.RUnlock()
+        var result []HealthCheck
+        for _, check := range r.checks </span><span class="cov8" title="1">{
+                if check.Mode() == CheckModeActive </span><span class="cov8" title="1">{
+                        result = append(result, check)
+                }</span>
+        }
+        <span class="cov8" title="1">return result</span>
+}
+
+// GetPassiveChecks returns all checks with mode Passive.
+func (r *registry) GetPassiveChecks() []HealthCheck <span class="cov8" title="1">{
+        r.mu.RLock()
+        defer r.mu.RUnlock()
+        var result []HealthCheck
+        for _, check := range r.checks </span><span class="cov8" title="1">{
+                if check.Mode() == CheckModePassive </span><span class="cov8" title="1">{
+                        result = append(result, check)
+                }</span>
+        }
+        <span class="cov8" title="1">return result</span>
+}
+
+// executeChecks runs the given checks concurrently.
+func executeChecks(ctx context.Context, checks []HealthCheck) map[string]*CheckResult <span class="cov8" title="1">{
+        results := make(map[string]*CheckResult)
+        var mu sync.Mutex
+        var wg sync.WaitGroup
+
+        for _, check := range checks </span><span class="cov8" title="1">{
+                wg.Add(1)
+                go func(c HealthCheck) </span><span class="cov8" title="1">{
+                        defer wg.Done()
+                        result := c.Execute(ctx)
+                        mu.Lock()
+                        results[c.Name()] = result
+                        mu.Unlock()
+                }</span>(check)
+        }
+        <span class="cov8" title="1">wg.Wait()
+        return results</span>
+}
+
+// ExecuteAll executes all checks and returns their results.
+func (r *registry) ExecuteAll(ctx context.Context) map[string]*CheckResult <span class="cov8" title="1">{
+        return executeChecks(ctx, r.GetAll())
+}</span>
+
+// ExecuteReadiness executes only readiness checks.
+func (r *registry) ExecuteReadiness(ctx context.Context) map[string]*CheckResult <span class="cov8" title="1">{
+        return executeChecks(ctx, r.GetReadinessChecks())
+}</span>
+
+// ExecuteByTags executes checks matching any of the given tags.
+func (r *registry) ExecuteByTags(ctx context.Context, tags ...string) map[string]*CheckResult <span class="cov8" title="1">{
+        return executeChecks(ctx, r.GetByTags(tags...))
+}</span>
+
+// ExecuteCheck executes a single check by name and returns the result.
+func (r *registry) ExecuteCheck(ctx context.Context, name string) *CheckResult <span class="cov8" title="1">{
+        check := r.Get(name)
+        if check == nil </span><span class="cov8" title="1">{
+                return NewCheckResult(StatusUnknown, "check not found", 0)
+        }</span>
+        <span class="cov8" title="1">return check.Execute(ctx)</span>
+}
+
+// Start begins automatic periodic health check execution for Active checks only.
+// Passive checks are not run by the ticker - they run on-demand during gating.
+// Results are automatically reported to the provided DepStateStore.
+func (r *registry) Start(interval time.Duration, stateStore DepStateStore) <span class="cov8" title="1">{
+        r.mu.Lock()
+        if r.running </span><span class="cov8" title="1">{
+                r.mu.Unlock()
+                return
+        }</span>
+        <span class="cov8" title="1">r.running = true
+        r.stopChan = make(chan struct{})
+        r.mu.Unlock()
+
+        if r.logger != nil </span><span class="cov8" title="1">{
+                r.logger.Trace("health: starting active check ticker interval=%s", interval)
+        }</span>
+
+        <span class="cov8" title="1">go r.runTicker(interval, stateStore)</span>
+}
+
+// Stop halts automatic health check execution.
+func (r *registry) Stop() <span class="cov8" title="1">{
+        r.mu.Lock()
+        defer r.mu.Unlock()
+        if !r.running </span><span class="cov8" title="1">{
+                return
+        }</span>
+        <span class="cov8" title="1">r.running = false
+        close(r.stopChan)
+        if r.logger != nil </span><span class="cov8" title="1">{
+                r.logger.Trace("health: stopped active check ticker")
+        }</span>
+}
+
+// runTicker executes health checks periodically and reports to state store.
+func (r *registry) runTicker(interval time.Duration, stateStore DepStateStore) <span class="cov8" title="1">{
+        ticker := time.NewTicker(interval)
+        defer ticker.Stop()
+
+        // Run immediately on start
+        r.executeAndReport(stateStore)
+
+        for </span><span class="cov8" title="1">{
+                select </span>{
+                case &lt;-ticker.C:<span class="cov8" title="1">
+                        r.executeAndReport(stateStore)</span>
+                case &lt;-r.stopChan:<span class="cov8" title="1">
+                        return</span>
+                }
+        }
+}
+
+// executeAndReport runs Active checks only and reports results to the state store.
+func (r *registry) executeAndReport(stateStore DepStateStore) <span class="cov8" title="1">{
+        ctx := context.Background()
+        // Only execute Active checks in the ticker
+        checks := r.GetActiveChecks()
+        if r.logger != nil </span><span class="cov8" title="1">{
+                r.logger.Trace("health: executing %d active checks", len(checks))
+        }</span>
+        <span class="cov8" title="1">results := executeChecks(ctx, checks)
+
+        for name, result := range results </span><span class="cov8" title="1">{
+                if result.Status == StatusUp </span><span class="cov8" title="1">{
+                        stateStore.ReportSuccess(name, result.Duration)
+                }</span> else<span class="cov8" title="1"> {
+                        stateStore.ReportFailure(name, result.Message)
+                }</span>
+                // Also set status directly for immediate reflection
+                <span class="cov8" title="1">stateStore.SetStatus(name, result.Status, result.Message)
+                if r.logger != nil </span><span class="cov8" title="1">{
+                        r.logger.Trace("health: active check %s status=%s duration=%s", name, result.Status, result.Duration)
+                }</span>
+        }
+}
+
+// SetResolver sets the DI resolver for all health checks.
+// Must be called before registering checks, or existing checks won't have the resolver.
+func (r *registry) SetResolver(resolver dix.Resolver) <span class="cov8" title="1">{
+        r.mu.Lock()
+        defer r.mu.Unlock()
+        r.resolver = resolver
+        // Update existing checks
+        for _, check := range r.checks </span><span class="cov8" title="1">{
+                if setter, ok := check.(interface{ SetResolver(dix.Resolver) }); ok </span><span class="cov8" title="1">{
+                        setter.SetResolver(resolver)
+                }</span>
+        }
+}
+
+// SetLogger sets the logger for internal trace/debug logs.
+func (r *registry) SetLogger(l logger.Logger) <span class="cov8" title="1">{
+        r.mu.Lock()
+        defer r.mu.Unlock()
+        r.logger = l
+}</span>
+</pre>
+		
+		<pre class="file" id="file13" style="display: none">// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: © 2026 Kryovyx
+
+// Package health provides a Rex extension for comprehensive health checking,
+// dependency state management, circuit breaker patterns, and request gating.
+//
+// This file defines the RouteDepMap interface for route-to-dependency mapping.
+package health
+
+// RequirementType defines how a dependency failure affects the route.
+type RequirementType int
+
+const (
+        // RequirementHard means the route fails fast if dependency is down.
+        RequirementHard RequirementType = iota
+        // RequirementSoft means the route continues but may use fallback.
+        RequirementSoft
+)
+
+// String returns the string representation of the requirement type.
+func (r RequirementType) String() string <span class="cov8" title="1">{
+        switch r </span>{
+        case RequirementHard:<span class="cov8" title="1">
+                return "HARD"</span>
+        case RequirementSoft:<span class="cov8" title="1">
+                return "SOFT"</span>
+        default:<span class="cov8" title="1">
+                return "UNKNOWN"</span>
+        }
+}
+
+// DepRequirement represents a dependency requirement for a route.
+type DepRequirement struct {
+        DepID     string          `json:"dep_id"`
+        Type      RequirementType `json:"type"`
+        MinStatus Status          `json:"min_status"`
+}
+
+// NewHardRequirement creates a hard dependency requirement.
+func NewHardRequirement(depID string) DepRequirement <span class="cov8" title="1">{
+        return DepRequirement{
+                DepID:     depID,
+                Type:      RequirementHard,
+                MinStatus: StatusUp,
+        }
+}</span>
+
+// NewSoftRequirement creates a soft dependency requirement.
+func NewSoftRequirement(depID string) DepRequirement <span class="cov8" title="1">{
+        return DepRequirement{
+                DepID:     depID,
+                Type:      RequirementSoft,
+                MinStatus: StatusDegraded,
+        }
+}</span>
+
+// WithMinStatus sets the minimum required status.
+func (d DepRequirement) WithMinStatus(status Status) DepRequirement <span class="cov8" title="1">{
+        d.MinStatus = status
+        return d
+}</span>
+
+// RouteDepMap manages the mapping of routes to their dependency requirements.
+type RouteDepMap interface {
+        // Register adds dependency requirements for a route.
+        Register(routeID string, requirements []DepRequirement)
+        // Get returns the dependency requirements for a route.
+        Get(routeID string) []DepRequirement
+        // Remove removes the dependency requirements for a route.
+        Remove(routeID string)
+        // GetAll returns all route-dependency mappings.
+        GetAll() map[string][]DepRequirement
+}
+
+// RouteID generates a unique route identifier.
+func RouteID(method, path string) string <span class="cov8" title="1">{
+        return method + ":" + path
+}</span>
+</pre>
+		
+		<pre class="file" id="file14" style="display: none">// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: © 2026 Kryovyx
+
+package health
+
+import (
+        "sync"
+)
+
+// routeDepMap is the default implementation of RouteDepMap.
+type routeDepMap struct {
+        deps map[string][]DepRequirement
+        mu   sync.RWMutex
+}
+
+// NewRouteDepMap creates a new route dependency map.
+func NewRouteDepMap() RouteDepMap <span class="cov8" title="1">{
+        return &amp;routeDepMap{
+                deps: make(map[string][]DepRequirement),
+        }
+}</span>
+
+// Register adds dependency requirements for a route.
+func (m *routeDepMap) Register(routeID string, requirements []DepRequirement) <span class="cov8" title="1">{
+        m.mu.Lock()
+        defer m.mu.Unlock()
+        m.deps[routeID] = requirements
+}</span>
+
+// Get returns the dependency requirements for a route.
+func (m *routeDepMap) Get(routeID string) []DepRequirement <span class="cov8" title="1">{
+        m.mu.RLock()
+        defer m.mu.RUnlock()
+        reqs, ok := m.deps[routeID]
+        if !ok </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+        // Return a copy
+        <span class="cov8" title="1">result := make([]DepRequirement, len(reqs))
+        copy(result, reqs)
+        return result</span>
+}
+
+// Remove removes the dependency requirements for a route.
+func (m *routeDepMap) Remove(routeID string) <span class="cov8" title="1">{
+        m.mu.Lock()
+        defer m.mu.Unlock()
+        delete(m.deps, routeID)
+}</span>
+
+// GetAll returns all route-dependency mappings.
+func (m *routeDepMap) GetAll() map[string][]DepRequirement <span class="cov8" title="1">{
+        m.mu.RLock()
+        defer m.mu.RUnlock()
+        result := make(map[string][]DepRequirement, len(m.deps))
+        for k, v := range m.deps </span><span class="cov8" title="1">{
+                cp := make([]DepRequirement, len(v))
+                copy(cp, v)
+                result[k] = cp
+        }</span>
+        <span class="cov8" title="1">return result</span>
+}
+</pre>
+		
+		<pre class="file" id="file15" style="display: none">// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: © 2026 Kryovyx
+
+package health
+
+import (
+        "encoding/json"
+        "net/http"
+
+        "github.com/kryovyx/rex/route"
+)
+
+// newLiveRoute creates the /live endpoint route.
+func newLiveRoute(path string) route.Route <span class="cov8" title="1">{
+        if path == "" </span><span class="cov8" title="1">{
+                path = "/live"
+        }</span>
+        <span class="cov8" title="1">return route.New("GET", path, func(ctx route.Context) </span><span class="cov8" title="1">{
+                resp := LiveResponse{Status: "UP"}
+                ctx.JSON(http.StatusOK, resp)
+        }</span>)
+}
+
+// LiveHandler creates a standalone http.Handler for the /live endpoint.
+func LiveHandler() http.Handler <span class="cov8" title="1">{
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) </span><span class="cov8" title="1">{
+                w.Header().Set("Content-Type", "application/json")
+                w.WriteHeader(http.StatusOK)
+                json.NewEncoder(w).Encode(LiveResponse{Status: "UP"})
+        }</span>)
+}
+</pre>
+		
+		<pre class="file" id="file16" style="display: none">// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: © 2026 Kryovyx
+
+package health
+
+import (
+        "encoding/json"
+        "net/http"
+
+        "github.com/kryovyx/rex/route"
+)
+
+// newReadyRoute creates the /ready endpoint route.
+func newReadyRoute(path string, cache SnapshotCache) route.Route <span class="cov8" title="1">{
+        if path == "" </span><span class="cov8" title="1">{
+                path = "/ready"
+        }</span>
+        <span class="cov8" title="1">return route.New("GET", path, func(ctx route.Context) </span><span class="cov8" title="1">{
+                snap := cache.GetReadiness(ctx)
+
+                resp := ReadyResponse{
+                        Status: snap.OverallStatus.String(),
+                        Checks: snap.Checks,
+                }
+
+                statusCode := http.StatusOK
+                if snap.OverallStatus == StatusDown </span><span class="cov8" title="1">{
+                        statusCode = http.StatusServiceUnavailable
+                }</span>
+
+                <span class="cov8" title="1">ctx.JSON(statusCode, resp)</span>
+        })
+}
+
+// ReadyHandler creates a standalone http.Handler for the /ready endpoint.
+func ReadyHandler(cache SnapshotCache) http.Handler <span class="cov8" title="1">{
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) </span><span class="cov8" title="1">{
+                snap := cache.GetReadiness(r.Context())
+
+                resp := ReadyResponse{
+                        Status: snap.OverallStatus.String(),
+                        Checks: snap.Checks,
+                }
+
+                w.Header().Set("Content-Type", "application/json")
+                statusCode := http.StatusOK
+                if snap.OverallStatus == StatusDown </span><span class="cov8" title="1">{
+                        statusCode = http.StatusServiceUnavailable
+                }</span>
+                <span class="cov8" title="1">w.WriteHeader(statusCode)
+                json.NewEncoder(w).Encode(resp)</span>
+        })
+}
+</pre>
+		
+		<pre class="file" id="file17" style="display: none">// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: © 2026 Kryovyx
+
+package health
+
+import (
+        "encoding/json"
+        "net/http"
+
+        "github.com/kryovyx/rex/route"
+)
+
+// newStatusRoute creates the /status endpoint route.
+func newStatusRoute(path string, cache SnapshotCache, stateStore DepStateStore) route.Route <span class="cov8" title="1">{
+        if path == "" </span><span class="cov8" title="1">{
+                path = "/status"
+        }</span>
+        <span class="cov8" title="1">return route.New("GET", path, func(ctx route.Context) </span><span class="cov8" title="1">{
+                snap := cache.Get(ctx)
+
+                resp := StatusResponse{
+                        Status:       snap.OverallStatus.String(),
+                        Timestamp:    snap.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
+                        Checks:       snap.Checks,
+                        Dependencies: snap.Dependencies,
+                }
+
+                // Add fresh dependency states
+                if stateStore != nil </span><span class="cov8" title="1">{
+                        resp.Dependencies = stateStore.GetAll()
+                }</span>
+
+                <span class="cov8" title="1">statusCode := http.StatusOK
+                if snap.OverallStatus == StatusDown </span><span class="cov8" title="1">{
+                        statusCode = http.StatusServiceUnavailable
+                }</span>
+
+                <span class="cov8" title="1">ctx.JSON(statusCode, resp)</span>
+        })
+}
+
+// StatusHandler creates a standalone http.Handler for the /status endpoint.
+// Useful for exposing health on a separate port without Rex routing.
+func StatusHandler(cache SnapshotCache, stateStore DepStateStore) http.Handler <span class="cov8" title="1">{
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) </span><span class="cov8" title="1">{
+                snap := cache.Get(r.Context())
+
+                resp := StatusResponse{
+                        Status:       snap.OverallStatus.String(),
+                        Timestamp:    snap.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
+                        Checks:       snap.Checks,
+                        Dependencies: snap.Dependencies,
+                }
+
+                if stateStore != nil </span><span class="cov8" title="1">{
+                        resp.Dependencies = stateStore.GetAll()
+                }</span>
+
+                <span class="cov8" title="1">w.Header().Set("Content-Type", "application/json")
+                statusCode := http.StatusOK
+                if snap.OverallStatus == StatusDown </span><span class="cov8" title="1">{
+                        statusCode = http.StatusServiceUnavailable
+                }</span>
+                <span class="cov8" title="1">w.WriteHeader(statusCode)
+                json.NewEncoder(w).Encode(resp)</span>
+        })
+}
+</pre>
+		
+		<pre class="file" id="file18" style="display: none">// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: © 2026 Kryovyx
+
+package health
+
+import (
+        "context"
+        "sync"
+        "time"
+)
+
+// Snapshot holds a point-in-time view of all health check results.
+type Snapshot struct {
+        Timestamp     time.Time               `json:"timestamp"`
+        OverallStatus Status                  `json:"overall_status"`
+        Checks        map[string]*CheckResult `json:"checks"`
+        Dependencies  map[string]*DepState    `json:"dependencies,omitempty"`
+}
+
+// NewSnapshot creates a new health snapshot.
+func NewSnapshot() *Snapshot <span class="cov8" title="1">{
+        return &amp;Snapshot{
+                Timestamp:     time.Now(),
+                OverallStatus: StatusUp,
+                Checks:        make(map[string]*CheckResult),
+                Dependencies:  make(map[string]*DepState),
+        }
+}</span>
+
+// ComputeOverallStatus computes the overall status from all check results.
+func (s *Snapshot) ComputeOverallStatus() <span class="cov8" title="1">{
+        worst := StatusUp
+        for _, result := range s.Checks </span><span class="cov8" title="1">{
+                if result.Status &gt; worst </span><span class="cov8" title="1">{
+                        worst = result.Status
+                }</span>
+        }
+        <span class="cov8" title="1">for _, dep := range s.Dependencies </span><span class="cov8" title="1">{
+                if dep.Status &gt; worst </span><span class="cov8" title="1">{
+                        worst = dep.Status
+                }</span>
+        }
+        <span class="cov8" title="1">s.OverallStatus = worst</span>
+}
+
+// SnapshotCache provides cached health snapshots with TTL.
+type SnapshotCache interface {
+        // Get returns the current cached snapshot, refreshing if stale.
+        Get(ctx context.Context) *Snapshot
+        // GetReadiness returns a snapshot for readiness checks only.
+        GetReadiness(ctx context.Context) *Snapshot
+        // Invalidate clears the cache, forcing a refresh on next Get.
+        Invalidate()
+        // SetTTL sets the cache TTL.
+        SetTTL(ttl time.Duration)
+}
+
+// snapshotCache is the default implementation of SnapshotCache.
+type snapshotCache struct {
+        registry   Registry
+        stateStore DepStateStore
+        ttl        time.Duration
+
+        snapshot          *Snapshot
+        readinessSnapshot *Snapshot
+        lastRefresh       time.Time
+        lastReadiness     time.Time
+        mu                sync.RWMutex
+}
+
+// NewSnapshotCache creates a new snapshot cache.
+func NewSnapshotCache(registry Registry, stateStore DepStateStore, ttl time.Duration) SnapshotCache <span class="cov8" title="1">{
+        if ttl == 0 </span><span class="cov8" title="1">{
+                ttl = 5 * time.Second
+        }</span>
+        <span class="cov8" title="1">return &amp;snapshotCache{
+                registry:   registry,
+                stateStore: stateStore,
+                ttl:        ttl,
+        }</span>
+}
+
+// Get returns the current cached snapshot, refreshing if stale.
+func (c *snapshotCache) Get(ctx context.Context) *Snapshot <span class="cov8" title="1">{
+        c.mu.RLock()
+        if c.snapshot != nil &amp;&amp; time.Since(c.lastRefresh) &lt; c.ttl </span><span class="cov8" title="1">{
+                snap := c.snapshot
+                c.mu.RUnlock()
+                return snap
+        }</span>
+        <span class="cov8" title="1">c.mu.RUnlock()
+
+        c.mu.Lock()
+        defer c.mu.Unlock()
+
+        // Double-check after acquiring write lock
+        if c.snapshot != nil &amp;&amp; time.Since(c.lastRefresh) &lt; c.ttl </span><span class="cov0" title="0">{
+                return c.snapshot
+        }</span>
+
+        <span class="cov8" title="1">c.snapshot = c.buildSnapshot(ctx, false)
+        c.lastRefresh = time.Now()
+        return c.snapshot</span>
+}
+
+// GetReadiness returns a snapshot for readiness checks only.
+func (c *snapshotCache) GetReadiness(ctx context.Context) *Snapshot <span class="cov8" title="1">{
+        c.mu.RLock()
+        if c.readinessSnapshot != nil &amp;&amp; time.Since(c.lastReadiness) &lt; c.ttl </span><span class="cov8" title="1">{
+                snap := c.readinessSnapshot
+                c.mu.RUnlock()
+                return snap
+        }</span>
+        <span class="cov8" title="1">c.mu.RUnlock()
+
+        c.mu.Lock()
+        defer c.mu.Unlock()
+
+        // Double-check after acquiring write lock
+        if c.readinessSnapshot != nil &amp;&amp; time.Since(c.lastReadiness) &lt; c.ttl </span><span class="cov0" title="0">{
+                return c.readinessSnapshot
+        }</span>
+
+        <span class="cov8" title="1">c.readinessSnapshot = c.buildSnapshot(ctx, true)
+        c.lastReadiness = time.Now()
+        return c.readinessSnapshot</span>
+}
+
+// buildSnapshot creates a new snapshot from current state.
+func (c *snapshotCache) buildSnapshot(ctx context.Context, readinessOnly bool) *Snapshot <span class="cov8" title="1">{
+        snap := NewSnapshot()
+
+        // Execute checks
+        var results map[string]*CheckResult
+        if readinessOnly </span><span class="cov8" title="1">{
+                results = c.registry.ExecuteReadiness(ctx)
+        }</span> else<span class="cov8" title="1"> {
+                results = c.registry.ExecuteAll(ctx)
+        }</span>
+        <span class="cov8" title="1">snap.Checks = results
+
+        // Add dependency states
+        if c.stateStore != nil </span><span class="cov8" title="1">{
+                snap.Dependencies = c.stateStore.GetAll()
+        }</span>
+
+        <span class="cov8" title="1">snap.ComputeOverallStatus()
+        return snap</span>
+}
+
+// Invalidate clears the cache, forcing a refresh on next Get.
+func (c *snapshotCache) Invalidate() <span class="cov8" title="1">{
+        c.mu.Lock()
+        defer c.mu.Unlock()
+        c.snapshot = nil
+        c.readinessSnapshot = nil
+        c.lastRefresh = time.Time{}
+        c.lastReadiness = time.Time{}
+}</span>
+
+// SetTTL sets the cache TTL.
+func (c *snapshotCache) SetTTL(ttl time.Duration) <span class="cov8" title="1">{
+        c.mu.Lock()
+        defer c.mu.Unlock()
+        c.ttl = ttl
+}</span>
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>

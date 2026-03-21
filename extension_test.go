@@ -16,6 +16,7 @@ import (
 	"github.com/kryovyx/rex/logger"
 	"github.com/kryovyx/rex/route"
 	"github.com/kryovyx/rextension"
+	rxevent "github.com/kryovyx/rextension/event"
 
 	rx "github.com/kryovyx/rex"
 )
@@ -162,7 +163,7 @@ func (m *mockBus) Emit(ev event.Event) {
 	}
 }
 
-func (m *mockBus) SetLogger(l logger.Logger) {}
+func (m *mockBus) SetLogger(l rxevent.BusLogger) {}
 func (m *mockBus) Close()                    {}
 
 var _ event.Bus = (*mockBus)(nil)
@@ -537,7 +538,7 @@ func TestHealthExtension_OnInitialize(t *testing.T) {
 		}
 
 		// Emit the event using the actual event type
-		ev := event.NewRouterRouteRegisteredEvent(context.Background(), "default", healthRoute)
+		ev := rxevent.NewRouterRouteRegisteredEvent(context.Background(), "default", healthRoute)
 		r.bus.Emit(ev)
 
 		// Verify deps were registered
@@ -565,7 +566,7 @@ func TestHealthExtension_OnInitialize(t *testing.T) {
 		}
 
 		// Emit the event using the actual event type
-		ev := event.NewRouterRouteRegisteredEvent(context.Background(), "default", regularRoute)
+		ev := rxevent.NewRouterRouteRegisteredEvent(context.Background(), "default", regularRoute)
 		r.bus.Emit(ev)
 
 		// Verify no deps were registered

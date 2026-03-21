@@ -18,8 +18,8 @@ import (
 	"strings"
 
 	"github.com/kryovyx/dix"
-	"github.com/kryovyx/rex/event"
 	rx "github.com/kryovyx/rextension"
+	rxevent "github.com/kryovyx/rextension/event"
 )
 
 // HealthRouterName is the default name for the dedicated health router.
@@ -103,8 +103,8 @@ func (e *HealthExtension) OnInitialize(ctx context.Context, r rx.Rex) error {
 	bus := r.EventBus()
 
 	// Subscribe to route registration events
-	bus.Subscribe(event.RouterRouteRegisteredEventType, func(ev event.Event) {
-		if routeEv, ok := event.As[event.RouterRouteRegisteredEvent](ev); ok {
+	bus.Subscribe(rxevent.EventTypeRouterRouteRegistered, func(ev rxevent.Event) {
+			if routeEv, ok := rxevent.As[rxevent.RouterRouteRegisteredEvent](ev); ok {
 			rt := routeEv.Route
 			// Check if route implements HealthDepRoute (which embeds route.Route)
 			if hdr, ok := rt.(HealthDepRoute); ok {

@@ -89,6 +89,7 @@ func (m *mockRouteContext) SetValue(key, value interface{}) {
 func (m *mockRouteContext) GetValue(key interface{}) interface{} {
 	return m.values[key]
 }
+func (m *mockRouteContext) Param(name string) string { return "" }
 
 // mockRouteResolver implements dix.Resolver for route tests.
 type mockRouteResolver struct{}

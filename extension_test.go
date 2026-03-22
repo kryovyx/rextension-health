@@ -164,7 +164,7 @@ func (m *mockBus) Emit(ev event.Event) {
 }
 
 func (m *mockBus) SetLogger(l rxevent.BusLogger) {}
-func (m *mockBus) Close()                    {}
+func (m *mockBus) Close()                        {}
 
 var _ event.Bus = (*mockBus)(nil)
 
@@ -479,9 +479,9 @@ func TestHealthExtension_OnInitialize(t *testing.T) {
 		ext.OnInitialize(context.Background(), r)
 
 		bus := r.bus.(*mockBus)
-		if len(bus.handlers[event.RouterRouteRegisteredEventType]) != 1 {
-			t.Fatalf("expected 1 handler for RouterRouteRegisteredEventType, got %d",
-				len(bus.handlers[event.RouterRouteRegisteredEventType]))
+		if len(bus.handlers[rxevent.EventTypeRouterRouteRegistered]) != 1 {
+			t.Fatalf("expected 1 handler for EventTypeRouterRouteRegistered, got %d",
+				len(bus.handlers[rxevent.EventTypeRouterRouteRegistered]))
 		}
 	})
 

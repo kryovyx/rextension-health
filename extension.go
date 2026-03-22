@@ -104,7 +104,7 @@ func (e *HealthExtension) OnInitialize(ctx context.Context, r rx.Rex) error {
 
 	// Subscribe to route registration events
 	bus.Subscribe(rxevent.EventTypeRouterRouteRegistered, func(ev rxevent.Event) {
-			if routeEv, ok := rxevent.As[rxevent.RouterRouteRegisteredEvent](ev); ok {
+		if routeEv, ok := rxevent.As[rxevent.RouterRouteRegisteredEvent](ev); ok {
 			rt := routeEv.Route
 			// Check if route implements HealthDepRoute (which embeds route.Route)
 			if hdr, ok := rt.(HealthDepRoute); ok {

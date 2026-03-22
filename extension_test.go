@@ -14,9 +14,9 @@ import (
 	"github.com/kryovyx/dix"
 	"github.com/kryovyx/rex/event"
 	"github.com/kryovyx/rex/logger"
-	rxroute "github.com/kryovyx/rextension/route"
 	"github.com/kryovyx/rextension"
 	rxevent "github.com/kryovyx/rextension/event"
+	rxroute "github.com/kryovyx/rextension/route"
 )
 
 // --------------------------------------------------------------------------
@@ -57,7 +57,7 @@ func (m *mockRex) WithExtensions(ext ...rextension.Extension) rextension.Rex {
 	return m
 }
 func (m *mockRex) WithLogger(l logger.Logger) rextension.Rex { m.logger = l; return m }
-func (m *mockRex) Container() dix.Container          { return m.container }
+func (m *mockRex) Container() dix.Container                  { return m.container }
 func (m *mockRex) RegisterRoute(rt rextension.Route) error {
 	m.registerRouteCallCount++
 	if m.registerRouteErr != nil {
@@ -172,8 +172,8 @@ type mockRoute struct {
 	handler rxroute.HandlerFunc
 }
 
-func (m *mockRoute) Method() string             { return m.method }
-func (m *mockRoute) Path() string               { return m.path }
+func (m *mockRoute) Method() string               { return m.method }
+func (m *mockRoute) Path() string                 { return m.path }
 func (m *mockRoute) Handler() rxroute.HandlerFunc { return m.handler }
 
 var _ rxroute.Route = (*mockRoute)(nil)
@@ -187,7 +187,7 @@ type mockHealthDepRoute struct {
 
 func (m *mockHealthDepRoute) Method() string                 { return m.method }
 func (m *mockHealthDepRoute) Path() string                   { return m.path }
-func (m *mockHealthDepRoute) Handler() rxroute.HandlerFunc     { return func(ctx rxroute.Context) {} }
+func (m *mockHealthDepRoute) Handler() rxroute.HandlerFunc   { return func(ctx rxroute.Context) {} }
 func (m *mockHealthDepRoute) Dependencies() []DepRequirement { return m.deps }
 
 var _ HealthDepRoute = (*mockHealthDepRoute)(nil)

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	rx "github.com/kryovyx/rex"
+	"github.com/kryovyx/rextension"
 )
 
 // --------------------------------------------------------------------------
@@ -83,7 +83,7 @@ func TestConfigOptions(t *testing.T) {
 
 	t.Run("WithHealthRouter_sets_router_config", func(t *testing.T) {
 		// WithHealthRouter_sets_router_config should override router settings.
-		routerCfg := rx.RouterConfig{Addr: ":9999", BaseURL: "/api"}
+		routerCfg := rextension.RouterConfig{Addr: ":9999", BaseURL: "/api"}
 		cfg := NewConfig(WithHealthRouter(routerCfg))
 		if cfg.Router.Addr != ":9999" {
 			t.Fatalf("expected addr :9999, got %s", cfg.Router.Addr)

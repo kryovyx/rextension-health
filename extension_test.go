@@ -17,8 +17,6 @@ import (
 	rxroute "github.com/kryovyx/rextension/route"
 	"github.com/kryovyx/rextension"
 	rxevent "github.com/kryovyx/rextension/event"
-
-	rx "github.com/kryovyx/rex"
 )
 
 // --------------------------------------------------------------------------
@@ -30,7 +28,7 @@ type mockRex struct {
 	container               dix.Container
 	bus                     event.Bus
 	logger                  logger.Logger
-	extensions              []rx.Extension
+	extensions              []rextension.Extension
 	registeredRoutes        []rxroute.Route
 	routerRoutes            map[string][]rxroute.Route
 	createdRouters          []string
@@ -53,12 +51,12 @@ func newMockRex() *mockRex {
 	}
 }
 
-func (m *mockRex) WithOptions(options ...rx.Option) rx.Rex { return m }
-func (m *mockRex) WithExtensions(ext ...rx.Extension) rextension.Rex {
+func (m *mockRex) WithOptions(options ...rextension.Option) rextension.Rex { return m }
+func (m *mockRex) WithExtensions(ext ...rextension.Extension) rextension.Rex {
 	m.extensions = append(m.extensions, ext...)
 	return m
 }
-func (m *mockRex) WithLogger(l logger.Logger) rx.Rex { m.logger = l; return m }
+func (m *mockRex) WithLogger(l logger.Logger) rextension.Rex { m.logger = l; return m }
 func (m *mockRex) Container() dix.Container          { return m.container }
 func (m *mockRex) RegisterRoute(rt rextension.Route) error {
 	m.registerRouteCallCount++
@@ -86,7 +84,7 @@ func (m *mockRex) RegisterRouteToRouter(rt rextension.Route, routerName string) 
 	}
 	return nil
 }
-func (m *mockRex) CreateRouter(name string, cfg rx.RouterConfig) error {
+func (m *mockRex) CreateRouter(name string, cfg rextension.RouterConfig) error {
 	if m.createRouterErr != nil {
 		return m.createRouterErr
 	}
@@ -100,9 +98,8 @@ func (m *mockRex) Use(mw rextension.Middleware) {
 	m.usedMiddlewares = append(m.usedMiddlewares, mw)
 }
 func (m *mockRex) Logger() logger.Logger { return m.logger }
-func (m *mockRex) Config() *rx.Config    { return nil }
 
-var _ rx.Rex = (*mockRex)(nil)
+var _ rextension.Rex = (*mockRex)(nil)
 
 // mockLoggerImpl is a mock logger.Logger for testing.
 type mockLoggerImpl struct {
@@ -276,7 +273,7 @@ func TestNewHealthExtension(t *testing.T) {
 
 	t.Run("returns_extension_with_custom_router_config", func(t *testing.T) {
 		// Returns_extension_with_custom_router_config should override router address.
-		cfg := &Config{Router: rx.RouterConfig{Addr: ":9999"}}
+		cfg := &Config{Router: rextension.RouterConfig{Addr: ":9999"}}
 		ext := NewHealthExtension(cfg)
 
 		he := ext.(*HealthExtension)
@@ -407,8 +404,8 @@ func TestHealthExtension_OnInitialize(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected nil error, got %v", err)
 		}
-		if ext.routerName != rx.DefaultRouterName {
-			t.Fatalf("expected routerName=%s, got %s", rx.DefaultRouterName, ext.routerName)
+		if ext.routerName != rextension.DefaultRouterName {
+			t.Fatalf("expected routerName=%s, got %s", rextension.DefaultRouterName, ext.routerName)
 		}
 	})
 

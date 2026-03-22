@@ -7,15 +7,15 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/kryovyx/rex/route"
+	rxroute "github.com/kryovyx/rextension/route"
 )
 
 // newReadyRoute creates the /ready endpoint route.
-func newReadyRoute(path string, cache SnapshotCache) route.Route {
+func newReadyRoute(path string, cache SnapshotCache) rxroute.Route {
 	if path == "" {
 		path = "/ready"
 	}
-	return route.New("GET", path, func(ctx route.Context) {
+	return rxroute.New("GET", path, func(ctx rxroute.Context) {
 		snap := cache.GetReadiness(ctx)
 
 		resp := ReadyResponse{

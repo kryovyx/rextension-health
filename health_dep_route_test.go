@@ -7,7 +7,7 @@ package health
 import (
 	"testing"
 
-	"github.com/kryovyx/rex/route"
+	rxroute "github.com/kryovyx/rextension/route"
 )
 
 // --------------------------------------------------------------------------
@@ -17,7 +17,7 @@ import (
 func TestNewHealthDepRoute(t *testing.T) {
 	t.Run("wraps_route_with_dependencies", func(t *testing.T) {
 		// Wraps_route_with_dependencies should add deps to existing route.
-		baseRoute := route.New("GET", "/api/users", func(ctx route.Context) {})
+		baseRoute := rxroute.New("GET", "/api/users", func(ctx rxroute.Context) {})
 
 		deps := []DepRequirement{
 			NewHardRequirement("db"),
@@ -41,7 +41,7 @@ func TestNewHealthDepRoute(t *testing.T) {
 	t.Run("handler_delegates_to_base_route", func(t *testing.T) {
 		// Handler_delegates_to_base_route should use the base route's handler.
 		handlerCalled := false
-		baseRoute := route.New("POST", "/api/orders", func(ctx route.Context) {
+		baseRoute := rxroute.New("POST", "/api/orders", func(ctx rxroute.Context) {
 			handlerCalled = true
 		})
 
@@ -64,7 +64,7 @@ func TestNewRouteWithDeps(t *testing.T) {
 	t.Run("creates_route_with_dependencies", func(t *testing.T) {
 		// Creates_route_with_dependencies should create a new route with deps.
 		handlerCalled := false
-		rt := NewRouteWithDeps("DELETE", "/api/items/:id", func(ctx route.Context) {
+		rt := NewRouteWithDeps("DELETE", "/api/items/:id", func(ctx rxroute.Context) {
 			handlerCalled = true
 		}, NewHardRequirement("db"))
 
@@ -92,7 +92,7 @@ func TestNewRouteWithDeps(t *testing.T) {
 
 	t.Run("creates_route_without_dependencies", func(t *testing.T) {
 		// Creates_route_without_dependencies should work with no deps.
-		rt := NewRouteWithDeps("GET", "/api/health", func(ctx route.Context) {})
+		rt := NewRouteWithDeps("GET", "/api/health", func(ctx rxroute.Context) {})
 
 		deps := rt.Dependencies()
 		if len(deps) != 0 {

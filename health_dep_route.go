@@ -4,26 +4,26 @@
 package health
 
 import (
-	"github.com/kryovyx/rex/route"
+	rxroute "github.com/kryovyx/rextension/route"
 )
 
-// HealthDepRoute extends route.Route with dependency declaration.
+// HealthDepRoute extends rxroute.Route with dependency declaration.
 // Routes implementing this interface will have their dependencies
 // automatically registered with the health extension.
 type HealthDepRoute interface {
-	route.Route
+	rxroute.Route
 	// Dependencies returns the list of dependency requirements for this route.
 	Dependencies() []DepRequirement
 }
 
 // healthDepRoute is a wrapper that adds dependency information to a route.
 type healthDepRoute struct {
-	route.Route
+	rxroute.Route
 	deps []DepRequirement
 }
 
 // NewHealthDepRoute wraps a route with dependency requirements.
-func NewHealthDepRoute(rt route.Route, deps ...DepRequirement) HealthDepRoute {
+func NewHealthDepRoute(rt rxroute.Route, deps ...DepRequirement) HealthDepRoute {
 	return &healthDepRoute{
 		Route: rt,
 		deps:  deps,
@@ -36,9 +36,9 @@ func (r *healthDepRoute) Dependencies() []DepRequirement {
 }
 
 // NewRouteWithDeps creates a new route with dependency requirements.
-func NewRouteWithDeps(method, path string, handler route.HandlerFunc, deps ...DepRequirement) HealthDepRoute {
+func NewRouteWithDeps(method, path string, handler rxroute.HandlerFunc, deps ...DepRequirement) HealthDepRoute {
 	return &healthDepRoute{
-		Route: route.New(method, path, handler),
+		Route: rxroute.New(method, path, handler),
 		deps:  deps,
 	}
 }

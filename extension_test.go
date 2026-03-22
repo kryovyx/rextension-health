@@ -14,7 +14,7 @@ import (
 	"github.com/kryovyx/dix"
 	"github.com/kryovyx/rex/event"
 	"github.com/kryovyx/rex/logger"
-	"github.com/kryovyx/rex/route"
+	rxroute "github.com/kryovyx/rextension/route"
 	"github.com/kryovyx/rextension"
 	rxevent "github.com/kryovyx/rextension/event"
 
@@ -31,8 +31,8 @@ type mockRex struct {
 	bus                     event.Bus
 	logger                  logger.Logger
 	extensions              []rx.Extension
-	registeredRoutes        []route.Route
-	routerRoutes            map[string][]route.Route
+	registeredRoutes        []rxroute.Route
+	routerRoutes            map[string][]rxroute.Route
 	createdRouters          []string
 	createRouterErr         error
 	registerRouteErr        error
@@ -49,7 +49,7 @@ func newMockRex() *mockRex {
 		container:    newMockContainer(),
 		bus:          newMockBus(),
 		logger:       &mockLoggerImpl{},
-		routerRoutes: make(map[string][]route.Route),
+		routerRoutes: make(map[string][]rxroute.Route),
 	}
 }
 
@@ -68,7 +68,7 @@ func (m *mockRex) RegisterRoute(rt rextension.Route) error {
 			return m.registerRouteErr
 		}
 	}
-	if rt, ok := rt.(route.Route); ok {
+	if rt, ok := rt.(rxroute.Route); ok {
 		m.registeredRoutes = append(m.registeredRoutes, rt)
 	}
 	return nil
@@ -81,7 +81,7 @@ func (m *mockRex) RegisterRouteToRouter(rt rextension.Route, routerName string) 
 			return m.registerRouterErr
 		}
 	}
-	if r, ok := rt.(route.Route); ok {
+	if r, ok := rt.(rxroute.Route); ok {
 		m.routerRoutes[routerName] = append(m.routerRoutes[routerName], r)
 	}
 	return nil
@@ -168,20 +168,20 @@ func (m *mockBus) Close()                        {}
 
 var _ event.Bus = (*mockBus)(nil)
 
-// mockRoute is a minimal route.Route implementation for testing.
+// mockRoute is a minimal rxroute.Route implementation for testing.
 type mockRoute struct {
 	method  string
 	path    string
-	handler route.HandlerFunc
+	handler rxroute.HandlerFunc
 }
 
 func (m *mockRoute) Method() string             { return m.method }
 func (m *mockRoute) Path() string               { return m.path }
-func (m *mockRoute) Handler() route.HandlerFunc { return m.handler }
+func (m *mockRoute) Handler() rxroute.HandlerFunc { return m.handler }
 
-var _ route.Route = (*mockRoute)(nil)
+var _ rxroute.Route = (*mockRoute)(nil)
 
-// mockHealthDepRoute is a mock implementing both route.Route and HealthDepRoute.
+// mockHealthDepRoute is a mock implementing both rxroute.Route and HealthDepRoute.
 type mockHealthDepRoute struct {
 	method string
 	path   string
@@ -190,7 +190,7 @@ type mockHealthDepRoute struct {
 
 func (m *mockHealthDepRoute) Method() string                 { return m.method }
 func (m *mockHealthDepRoute) Path() string                   { return m.path }
-func (m *mockHealthDepRoute) Handler() route.HandlerFunc     { return func(ctx route.Context) {} }
+func (m *mockHealthDepRoute) Handler() rxroute.HandlerFunc     { return func(ctx rxroute.Context) {} }
 func (m *mockHealthDepRoute) Dependencies() []DepRequirement { return m.deps }
 
 var _ HealthDepRoute = (*mockHealthDepRoute)(nil)

@@ -7,15 +7,15 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/kryovyx/rex/route"
+	rxroute "github.com/kryovyx/rextension/route"
 )
 
 // newLiveRoute creates the /live endpoint route.
-func newLiveRoute(path string) route.Route {
+func newLiveRoute(path string) rxroute.Route {
 	if path == "" {
 		path = "/live"
 	}
-	return route.New("GET", path, func(ctx route.Context) {
+	return rxroute.New("GET", path, func(ctx rxroute.Context) {
 		resp := LiveResponse{Status: "UP"}
 		ctx.JSON(http.StatusOK, resp)
 	})

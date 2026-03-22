@@ -7,15 +7,15 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/kryovyx/rex/route"
+	rxroute "github.com/kryovyx/rextension/route"
 )
 
 // newStatusRoute creates the /status endpoint route.
-func newStatusRoute(path string, cache SnapshotCache, stateStore DepStateStore) route.Route {
+func newStatusRoute(path string, cache SnapshotCache, stateStore DepStateStore) rxroute.Route {
 	if path == "" {
 		path = "/status"
 	}
-	return route.New("GET", path, func(ctx route.Context) {
+	return rxroute.New("GET", path, func(ctx rxroute.Context) {
 		snap := cache.Get(ctx)
 
 		resp := StatusResponse{

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/kryovyx/dix"
-	"github.com/kryovyx/rex/logger"
+	"github.com/kryovyx/rextension"
 )
 
 // --------------------------------------------------------------------------
@@ -61,7 +61,7 @@ func (m *mockMwRegistry) ExecuteCheck(ctx context.Context, name string) *CheckRe
 func (m *mockMwRegistry) Start(interval time.Duration, stateStore DepStateStore) {}
 func (m *mockMwRegistry) Stop()                                                  {}
 func (m *mockMwRegistry) SetResolver(resolver dix.Resolver)                      {}
-func (m *mockMwRegistry) SetLogger(l logger.Logger)                              {}
+func (m *mockMwRegistry) SetLogger(l rextension.Logger)                          {}
 
 var _ Registry = (*mockMwRegistry)(nil)
 

@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/kryovyx/dix"
-	"github.com/kryovyx/rex/event"
-	"github.com/kryovyx/rex/logger"
 	"github.com/kryovyx/rextension"
 	rxevent "github.com/kryovyx/rextension/event"
 	rxroute "github.com/kryovyx/rextension/route"
@@ -26,8 +24,8 @@ import (
 // mockRex is a minimal Rex implementation for testing.
 type mockRex struct {
 	container               dix.Container
-	bus                     event.Bus
-	logger                  logger.Logger
+	bus                     rxevent.EventBus
+	logger                  rextension.Logger
 	extensions              []rextension.Extension
 	registeredRoutes        []rxroute.Route
 	routerRoutes            map[string][]rxroute.Route
@@ -56,8 +54,8 @@ func (m *mockRex) WithExtensions(ext ...rextension.Extension) rextension.Rex {
 	m.extensions = append(m.extensions, ext...)
 	return m
 }
-func (m *mockRex) WithLogger(l logger.Logger) rextension.Rex { m.logger = l; return m }
-func (m *mockRex) Container() dix.Container                  { return m.container }
+func (m *mockRex) WithLogger(l rextension.Logger) rextension.Rex { m.logger = l; return m }
+func (m *mockRex) Container() dix.Container                      { return m.container }
 func (m *mockRex) RegisterRoute(rt rextension.Route) error {
 	m.registerRouteCallCount++
 	if m.registerRouteErr != nil {
@@ -91,32 +89,32 @@ func (m *mockRex) CreateRouter(name string, cfg rextension.RouterConfig) error {
 	m.createdRouters = append(m.createdRouters, name)
 	return nil
 }
-func (m *mockRex) Run() error          { return nil }
-func (m *mockRex) Stop() error         { return nil }
-func (m *mockRex) EventBus() event.Bus { return m.bus }
+func (m *mockRex) Run() error                 { return nil }
+func (m *mockRex) Stop() error                { return nil }
+func (m *mockRex) EventBus() rxevent.EventBus { return m.bus }
 func (m *mockRex) Use(mw rextension.Middleware) {
 	m.usedMiddlewares = append(m.usedMiddlewares, mw)
 }
-func (m *mockRex) Logger() logger.Logger { return m.logger }
+func (m *mockRex) Logger() rextension.Logger { return m.logger }
 
 var _ rextension.Rex = (*mockRex)(nil)
 
-// mockLoggerImpl is a mock logger.Logger for testing.
+// mockLoggerImpl is a mock rextension.Logger for testing.
 type mockLoggerImpl struct {
-	level logger.LogLevel
+	level rextension.LogLevel
 }
 
-func (m *mockLoggerImpl) Info(format string, args ...interface{})                {}
-func (m *mockLoggerImpl) Warn(format string, args ...interface{})                {}
-func (m *mockLoggerImpl) Error(format string, args ...interface{})               {}
-func (m *mockLoggerImpl) Debug(format string, args ...interface{})               {}
-func (m *mockLoggerImpl) Trace(format string, args ...interface{})               {}
-func (m *mockLoggerImpl) SetLogLevel(level logger.LogLevel)                      { m.level = level }
-func (m *mockLoggerImpl) WithField(key string, value interface{}) logger.Logger  { return m }
-func (m *mockLoggerImpl) WithFields(fields map[string]interface{}) logger.Logger { return m }
-func (m *mockLoggerImpl) WithError(err error) logger.Logger                      { return m }
+func (m *mockLoggerImpl) Info(format string, args ...interface{})                    {}
+func (m *mockLoggerImpl) Warn(format string, args ...interface{})                    {}
+func (m *mockLoggerImpl) Error(format string, args ...interface{})                   {}
+func (m *mockLoggerImpl) Debug(format string, args ...interface{})                   {}
+func (m *mockLoggerImpl) Trace(format string, args ...interface{})                   {}
+func (m *mockLoggerImpl) SetLogLevel(level rextension.LogLevel)                      { m.level = level }
+func (m *mockLoggerImpl) WithField(key string, value interface{}) rextension.Logger  { return m }
+func (m *mockLoggerImpl) WithFields(fields map[string]interface{}) rextension.Logger { return m }
+func (m *mockLoggerImpl) WithError(err error) rextension.Logger                      { return m }
 
-var _ logger.Logger = (*mockLoggerImpl)(nil)
+var _ rextension.Logger = (*mockLoggerImpl)(nil)
 
 // mockContainer is a minimal dix.Container implementation for testing.
 type mockContainer struct {
@@ -139,22 +137,22 @@ func (m *mockContainer) NewScope() dix.Scope                 { return nil }
 
 var _ dix.Container = (*mockContainer)(nil)
 
-// mockBus is a minimal event.Bus implementation for testing.
+// mockBus is a minimal rxevent.EventBus implementation for testing.
 type mockBus struct {
-	handlers map[string][]event.EventHandler
+	handlers map[string][]rxevent.EventHandler
 }
 
 func newMockBus() *mockBus {
 	return &mockBus{
-		handlers: make(map[string][]event.EventHandler),
+		handlers: make(map[string][]rxevent.EventHandler),
 	}
 }
 
-func (m *mockBus) Subscribe(eventType string, handler event.EventHandler) {
+func (m *mockBus) Subscribe(eventType string, handler rxevent.EventHandler) {
 	m.handlers[eventType] = append(m.handlers[eventType], handler)
 }
 
-func (m *mockBus) Emit(ev event.Event) {
+func (m *mockBus) Emit(ev rxevent.Event) {
 	for _, h := range m.handlers[ev.Type()] {
 		h(ev)
 	}
@@ -163,7 +161,7 @@ func (m *mockBus) Emit(ev event.Event) {
 func (m *mockBus) SetLogger(l rxevent.BusLogger) {}
 func (m *mockBus) Close()                        {}
 
-var _ event.Bus = (*mockBus)(nil)
+var _ rxevent.EventBus = (*mockBus)(nil)
 
 // mockRoute is a minimal rxroute.Route implementation for testing.
 type mockRoute struct {

@@ -32,6 +32,19 @@ func TestNewDefaultConfig(t *testing.T) {
 		if cfg.AtDefaultAddr {
 			t.Fatal("expected AtDefaultAddr=false")
 		}
+		if cfg.Router.Addr != ":9091" {
+			t.Fatalf("expected Router.Addr=:9091, got %s", cfg.Router.Addr)
+		}
+		// TLS must stay opt-in. ListenSSL true with no certificate source anywhere is
+		// what rex rejects when the router starts, and it rejects it from inside a
+		// goroutine - so this default being wrong does not surface as an error but as
+		// a dead process.
+		if cfg.Router.ListenSSL {
+			t.Fatal("expected Router.ListenSSL=false: TLS is opt-in via a certificate source")
+		}
+		if cfg.Router.CertFile != nil || cfg.Router.KeyFile != nil || cfg.Router.TLSConfig != nil {
+			t.Fatal("expected no certificate source in the default router config")
+		}
 		if cfg.SnapshotTTL != 5*time.Second {
 			t.Fatalf("expected SnapshotTTL=5s, got %v", cfg.SnapshotTTL)
 		}

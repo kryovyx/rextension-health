@@ -20,6 +20,10 @@ type Config struct {
 	// AtDefaultAddr serves health endpoints on the default router when true.
 	AtDefaultAddr bool `default:"false"`
 	// Router config for the dedicated health router when AtDefaultAddr is false.
+	//
+	// TLS is opt-in: ListenSSL defaults to false, and the router serves TLS only
+	// once a certificate source is configured - CertFile/KeyFile, or TLSConfig for
+	// per-handshake selection so the certificate can be replaced without a restart.
 	Router rx.RouterConfig
 	// SnapshotTTL is the cache duration for health snapshots. Default: 5s.
 	SnapshotTTL time.Duration `default:"5s"`
@@ -39,7 +43,7 @@ func NewDefaultConfig() *Config {
 		ReadyPath:            "/ready",
 		StatusPath:           "/status",
 		AtDefaultAddr:        false,
-		Router:               rx.RouterConfig{Addr: ":9091", BaseURL: "/", SSLVerify: true, ListenSSL: true},
+		Router:               rx.RouterConfig{Addr: ":9091", BaseURL: "/", ListenSSL: false, CertFile: nil, KeyFile: nil, TLSConfig: nil},
 		SnapshotTTL:          5 * time.Second,
 		CheckInterval:        10 * time.Second,
 		StateStoreConfig:     DefaultDepStateStoreConfig(),

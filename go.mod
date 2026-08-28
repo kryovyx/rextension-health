@@ -4,6 +4,4 @@ go 1.26.0
 
 require github.com/kryovyx/dix v0.1.0
 
-require github.com/kryovyx/rextension v0.2.0
-
-replace github.com/kryovyx/rextension => ../rextension
+require github.com/kryovyx/rextension v0.2.1

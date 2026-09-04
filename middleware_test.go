@@ -11,21 +11,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kryovyx/dix"
 	"github.com/kryovyx/rextension"
+	rxroute "github.com/kryovyx/rextension/route"
 )
 
 // --------------------------------------------------------------------------
 // Mock implementations for middleware testing
 // --------------------------------------------------------------------------
 
-// mockMwResolver implements dix.Resolver for middleware tests.
+// mockMwResolver implements rextension.Resolver for middleware tests.
 type mockMwResolver struct{}
 
 func (m *mockMwResolver) Resolve(target interface{}) error    { return nil }
 func (m *mockMwResolver) ResolveAll(target interface{}) error { return nil }
 
-var _ dix.Resolver = (*mockMwResolver)(nil)
+var _ rextension.Resolver = (*mockMwResolver)(nil)
 
 // mockMwRegistry implements Registry for middleware tests.
 type mockMwRegistry struct {
@@ -60,7 +60,7 @@ func (m *mockMwRegistry) ExecuteCheck(ctx context.Context, name string) *CheckRe
 }
 func (m *mockMwRegistry) Start(interval time.Duration, stateStore DepStateStore) {}
 func (m *mockMwRegistry) Stop()                                                  {}
-func (m *mockMwRegistry) SetResolver(resolver dix.Resolver)                      {}
+func (m *mockMwRegistry) SetResolver(resolver rextension.Resolver)               {}
 func (m *mockMwRegistry) SetLogger(l rextension.Logger)                          {}
 
 var _ Registry = (*mockMwRegistry)(nil)
@@ -478,7 +478,7 @@ func TestShouldExecutePassiveCheck(t *testing.T) {
 	t.Run("returns_true_for_passive_check", func(t *testing.T) {
 		// Returns_true_for_passive_check should return true for passive mode.
 		registry := newMockMwRegistry()
-		passiveCheck := NewCheck("ext", func(ctx context.Context, r dix.Resolver) *CheckResult {
+		passiveCheck := NewCheck("ext", func(ctx context.Context, r rextension.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		}, WithCheckMode(CheckModePassive))
 		registry.Register(passiveCheck)
@@ -497,7 +497,7 @@ func TestShouldExecutePassiveCheck(t *testing.T) {
 	t.Run("returns_true_for_on_demand_check", func(t *testing.T) {
 		// Returns_true_for_on_demand_check should return true for on-demand mode.
 		registry := newMockMwRegistry()
-		onDemandCheck := NewCheck("api", func(ctx context.Context, r dix.Resolver) *CheckResult {
+		onDemandCheck := NewCheck("api", func(ctx context.Context, r rextension.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		}, WithCheckMode(CheckModeOnDemand))
 		registry.Register(onDemandCheck)
@@ -516,7 +516,7 @@ func TestShouldExecutePassiveCheck(t *testing.T) {
 	t.Run("returns_false_for_active_check", func(t *testing.T) {
 		// Returns_false_for_active_check should return false for active mode.
 		registry := newMockMwRegistry()
-		activeCheck := NewCheck("db", func(ctx context.Context, r dix.Resolver) *CheckResult {
+		activeCheck := NewCheck("db", func(ctx context.Context, r rextension.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		}, WithCheckMode(CheckModeActive))
 		registry.Register(activeCheck)
@@ -586,7 +586,7 @@ func TestExecutePassiveCheckIfNeeded(t *testing.T) {
 	t.Run("returns_nil_for_active_check", func(t *testing.T) {
 		// Returns_nil_for_active_check should return nil for non-passive.
 		registry := newMockMwRegistry()
-		activeCheck := NewCheck("db", func(ctx context.Context, r dix.Resolver) *CheckResult {
+		activeCheck := NewCheck("db", func(ctx context.Context, r rextension.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		}, WithCheckMode(CheckModeActive))
 		registry.Register(activeCheck)
@@ -607,7 +607,7 @@ func TestExecutePassiveCheckIfNeeded(t *testing.T) {
 	t.Run("returns_state_for_passive_check", func(t *testing.T) {
 		// Returns_state_for_passive_check should execute and return state.
 		registry := newMockMwRegistry()
-		passiveCheck := NewCheck("ext", func(ctx context.Context, r dix.Resolver) *CheckResult {
+		passiveCheck := NewCheck("ext", func(ctx context.Context, r rextension.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		}, WithCheckMode(CheckModePassive))
 		registry.Register(passiveCheck)
@@ -636,7 +636,7 @@ func TestExecutePassiveCheckIfNeeded(t *testing.T) {
 	t.Run("returns_state_for_on_demand_check", func(t *testing.T) {
 		// Returns_state_for_on_demand_check should execute and return state.
 		registry := newMockMwRegistry()
-		onDemandCheck := NewCheck("api", func(ctx context.Context, r dix.Resolver) *CheckResult {
+		onDemandCheck := NewCheck("api", func(ctx context.Context, r rextension.Resolver) *CheckResult {
 			return NewCheckResult(StatusDegraded, "slow", 0)
 		}, WithCheckMode(CheckModeOnDemand))
 		registry.Register(onDemandCheck)
@@ -662,7 +662,7 @@ func TestExecutePassiveCheckIfNeeded(t *testing.T) {
 	t.Run("returns_nil_when_cache_returns_nil", func(t *testing.T) {
 		// Returns_nil_when_cache_returns_nil should return nil if cache fails.
 		registry := newMockMwRegistry()
-		passiveCheck := NewCheck("ext", func(ctx context.Context, r dix.Resolver) *CheckResult {
+		passiveCheck := NewCheck("ext", func(ctx context.Context, r rextension.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		}, WithCheckMode(CheckModePassive))
 		registry.Register(passiveCheck)
@@ -687,11 +687,45 @@ func TestExecutePassiveCheckIfNeeded(t *testing.T) {
 // DependencyGateMiddleware tests
 // --------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Gate test helpers
+// ---------------------------------------------------------------------------
+
+// gateRoute is a route declaring dependency requirements.
+type gateRoute struct {
+	method string
+	path   string
+	deps   []DepRequirement
+}
+
+func (r *gateRoute) Method() string                 { return r.method }
+func (r *gateRoute) Path() string                   { return r.path }
+func (r *gateRoute) Handler() rxroute.HandlerFunc   { return func(rxroute.Context) {} }
+func (r *gateRoute) Dependencies() []DepRequirement { return r.deps }
+
+// bareRoute declares no dependencies.
+type bareRoute struct {
+	method string
+	path   string
+}
+
+func (r *bareRoute) Method() string               { return r.method }
+func (r *bareRoute) Path() string                 { return r.path }
+func (r *bareRoute) Handler() rxroute.HandlerFunc { return func(rxroute.Context) {} }
+
+// withMatchedRoute attaches rt to the request the way the router does.
+//
+// The gate reads the matched route from the context rather than reconstructing
+// an identifier from the URL, which is the whole point of P4.12 — so a test
+// that does not attach one is testing the pass-through path.
+func withMatchedRoute(req *http.Request, rt rxroute.Route) *http.Request {
+	return req.WithContext(rxroute.SetMatchedRoute(req.Context(), rt))
+}
+
 func TestDependencyGateMiddleware(t *testing.T) {
-	t.Run("passes_through_without_route_dep_map", func(t *testing.T) {
-		// Passes_through_without_route_dep_map should call next when no dep map.
+	t.Run("passes_through_for_a_route_with_no_dependencies", func(t *testing.T) {
+		// A route that is not a HealthDepRoute is passed straight through.
 		cfg := DefaultMiddlewareConfig()
-		cfg.RouteDepMap = nil
 		mw := DependencyGateMiddleware(cfg)
 
 		nextCalled := false
@@ -699,7 +733,8 @@ func TestDependencyGateMiddleware(t *testing.T) {
 			nextCalled = true
 		})
 
-		req := httptest.NewRequest("GET", "/api/users", nil)
+		route := &bareRoute{method: "GET", path: "/api/users"}
+		req := withMatchedRoute(httptest.NewRequest("GET", "/api/users", nil), route)
 		w := httptest.NewRecorder()
 		mw(next).ServeHTTP(w, req)
 
@@ -708,10 +743,9 @@ func TestDependencyGateMiddleware(t *testing.T) {
 		}
 	})
 
-	t.Run("passes_through_when_no_dependencies", func(t *testing.T) {
-		// Passes_through_when_no_dependencies should call next when route has no deps.
-		depMap := NewRouteDepMap()
-		cfg := MiddlewareConfig{RouteDepMap: depMap}
+	t.Run("passes_through_when_the_dependency_list_is_empty", func(t *testing.T) {
+		// A HealthDepRoute declaring an empty list is also passed through.
+		cfg := MiddlewareConfig{}
 		mw := DependencyGateMiddleware(cfg)
 
 		nextCalled := false
@@ -719,7 +753,8 @@ func TestDependencyGateMiddleware(t *testing.T) {
 			nextCalled = true
 		})
 
-		req := httptest.NewRequest("GET", "/api/users", nil)
+		route := &gateRoute{method: "GET", path: "/api/users", deps: nil}
+		req := withMatchedRoute(httptest.NewRequest("GET", "/api/users", nil), route)
 		w := httptest.NewRecorder()
 		mw(next).ServeHTTP(w, req)
 
@@ -730,14 +765,13 @@ func TestDependencyGateMiddleware(t *testing.T) {
 
 	t.Run("fails_fast_when_hard_dep_down", func(t *testing.T) {
 		// Fails_fast_when_hard_dep_down should write 503 and not call next.
-		depMap := NewRouteDepMap()
-		depMap.Register("GET:/api/users", []DepRequirement{NewHardRequirement("db")})
+		route := &gateRoute{method: "GET", path: "/api/users",
+			deps: []DepRequirement{NewHardRequirement("db")}}
 
 		stateStore := NewDepStateStore(DefaultDepStateStoreConfig())
 		stateStore.SetStatus("db", StatusDown, "connection refused")
 
 		cfg := MiddlewareConfig{
-			RouteDepMap:       depMap,
 			StateStore:        stateStore,
 			UseCache:          false,
 			FailureStatusCode: 503,
@@ -750,7 +784,7 @@ func TestDependencyGateMiddleware(t *testing.T) {
 			nextCalled = true
 		})
 
-		req := httptest.NewRequest("GET", "/api/users", nil)
+		req := withMatchedRoute(httptest.NewRequest("GET", "/api/users", nil), route)
 		w := httptest.NewRecorder()
 		mw(next).ServeHTTP(w, req)
 
@@ -767,16 +801,15 @@ func TestDependencyGateMiddleware(t *testing.T) {
 
 	t.Run("marks_soft_dep_degraded_and_continues", func(t *testing.T) {
 		// Marks_soft_dep_degraded_and_continues should add to DegradedDeps and call next.
-		depMap := NewRouteDepMap()
-		depMap.Register("GET:/api/users", []DepRequirement{NewSoftRequirement("cache")})
+		route := &gateRoute{method: "GET", path: "/api/users",
+			deps: []DepRequirement{NewSoftRequirement("cache")}}
 
 		stateStore := NewDepStateStore(DefaultDepStateStoreConfig())
 		stateStore.SetStatus("cache", StatusDown, "connection lost")
 
 		cfg := MiddlewareConfig{
-			RouteDepMap: depMap,
-			StateStore:  stateStore,
-			UseCache:    false,
+			StateStore: stateStore,
+			UseCache:   false,
 		}
 		mw := DependencyGateMiddleware(cfg)
 
@@ -785,7 +818,7 @@ func TestDependencyGateMiddleware(t *testing.T) {
 			capturedCtx = r.Context()
 		})
 
-		req := httptest.NewRequest("GET", "/api/users", nil)
+		req := withMatchedRoute(httptest.NewRequest("GET", "/api/users", nil), route)
 		w := httptest.NewRecorder()
 		mw(next).ServeHTTP(w, req)
 
@@ -803,8 +836,8 @@ func TestDependencyGateMiddleware(t *testing.T) {
 
 	t.Run("uses_cache_when_configured", func(t *testing.T) {
 		// Uses_cache_when_configured should read from SnapshotCache.
-		depMap := NewRouteDepMap()
-		depMap.Register("GET:/api/users", []DepRequirement{NewHardRequirement("db")})
+		route := &gateRoute{method: "GET", path: "/api/users",
+			deps: []DepRequirement{NewHardRequirement("db")}}
 
 		snapCache := newMockMwSnapshotCache()
 		snapCache.snapshot.Dependencies["db"] = &DepState{
@@ -813,7 +846,6 @@ func TestDependencyGateMiddleware(t *testing.T) {
 		}
 
 		cfg := MiddlewareConfig{
-			RouteDepMap:   depMap,
 			SnapshotCache: snapCache,
 			UseCache:      true,
 		}
@@ -824,7 +856,7 @@ func TestDependencyGateMiddleware(t *testing.T) {
 			nextCalled = true
 		})
 
-		req := httptest.NewRequest("GET", "/api/users", nil)
+		req := withMatchedRoute(httptest.NewRequest("GET", "/api/users", nil), route)
 		w := httptest.NewRecorder()
 		mw(next).ServeHTTP(w, req)
 
@@ -833,18 +865,17 @@ func TestDependencyGateMiddleware(t *testing.T) {
 		}
 	})
 
-	t.Run("uses_route_id_from_context_value", func(t *testing.T) {
-		// Uses_route_id_from_context_value when route ID is injected via context.
-		depMap := NewRouteDepMap()
-		depMap.Register("GET:/api/users", []DepRequirement{NewHardRequirement("db")})
-
-		stateStore := NewDepStateStore(DefaultDepStateStoreConfig())
-		stateStore.SetStatus("db", StatusUp, "connected")
-
+	// Replaces "uses_route_id_from_context_value", which injected a route
+	// identifier string into the context for the gate to read.
+	//
+	// The gate does not read an identifier any more — it reads the matched
+	// route. That removes the failure mode the old test was quietly built
+	// around: the identifier had to be constructed by somebody, from
+	// something, and the only thing available at request time was the URL.
+	t.Run("passes_through_with_no_matched_route", func(t *testing.T) {
 		cfg := MiddlewareConfig{
-			RouteDepMap: depMap,
-			StateStore:  stateStore,
-			UseCache:    false,
+			StateStore: NewDepStateStore(DefaultDepStateStoreConfig()),
+			UseCache:   false,
 		}
 		mw := DependencyGateMiddleware(cfg)
 
@@ -853,28 +884,67 @@ func TestDependencyGateMiddleware(t *testing.T) {
 			nextCalled = true
 		})
 
-		// Inject route ID via context (simulating RouteResolverMiddleware running first)
+		// No matched route in the context, as on a 404 path.
 		req := httptest.NewRequest("GET", "/other-path", nil)
-		req = req.WithContext(context.WithValue(req.Context(), ContextKeyRouteID, "GET:/api/users"))
 		w := httptest.NewRecorder()
 		mw(next).ServeHTTP(w, req)
 
 		if !nextCalled {
-			t.Error("expected next to be called")
+			t.Error("expected next to be called when there is no matched route")
 		}
 	})
 
-	t.Run("creates_unknown_state_when_no_data", func(t *testing.T) {
-		// Creates_unknown_state_when_no_data should fail hard deps with unknown status.
-		depMap := NewRouteDepMap()
-		depMap.Register("GET:/api/users", []DepRequirement{NewHardRequirement("db")})
-
-		stateStore := NewDepStateStore(DefaultDepStateStoreConfig())
+	// Replaces "creates_unknown_state_when_no_data", which asserted that an
+	// unknown dependency refuses the request.
+	//
+	// That behaviour was not a decision: the gate compares
+	// `state.Status > dep.MinStatus`, and StatusUnknown happened to be
+	// declared after StatusDown, so unknown sorted into "refuse". Reordering
+	// the constants would have silently inverted it.
+	//
+	// It is explicit now, and the default serves (O14) — refusing means 503ing
+	// every request for the first check interval after every boot, because a
+	// check has not run yet rather than because anything is wrong. The
+	// synchronous check pass in OnStart is what makes serving safe.
+	t.Run("an_unknown_dependency_serves_by_default", func(t *testing.T) {
+		route := &gateRoute{method: "GET", path: "/api/users",
+			deps: []DepRequirement{NewHardRequirement("db")}}
 
 		cfg := MiddlewareConfig{
-			RouteDepMap: depMap,
-			StateStore:  stateStore,
-			UseCache:    false,
+			StateStore: NewDepStateStore(DefaultDepStateStoreConfig()), // nothing recorded
+			UseCache:   false,
+			// TreatUnknownAs is the zero value, StatusUp.
+		}
+		mw := DependencyGateMiddleware(cfg)
+
+		nextCalled := false
+		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			nextCalled = true
+			w.WriteHeader(http.StatusOK)
+		})
+
+		req := withMatchedRoute(httptest.NewRequest("GET", "/api/users", nil), route)
+		w := httptest.NewRecorder()
+		mw(next).ServeHTTP(w, req)
+
+		if !nextCalled {
+			t.Error("an unknown dependency refused the request; the default must serve")
+		}
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", w.Code)
+		}
+	})
+
+	t.Run("an_unknown_dependency_can_be_configured_to_refuse", func(t *testing.T) {
+		// The escape hatch, for an application that must refuse rather than
+		// guess.
+		route := &gateRoute{method: "GET", path: "/api/users",
+			deps: []DepRequirement{NewHardRequirement("db")}}
+
+		cfg := MiddlewareConfig{
+			StateStore:     NewDepStateStore(DefaultDepStateStoreConfig()),
+			UseCache:       false,
+			TreatUnknownAs: StatusDown,
 		}
 		mw := DependencyGateMiddleware(cfg)
 
@@ -883,25 +953,56 @@ func TestDependencyGateMiddleware(t *testing.T) {
 			nextCalled = true
 		})
 
-		req := httptest.NewRequest("GET", "/api/users", nil)
+		req := withMatchedRoute(httptest.NewRequest("GET", "/api/users", nil), route)
 		w := httptest.NewRecorder()
 		mw(next).ServeHTTP(w, req)
 
 		if nextCalled {
-			t.Error("expected next NOT to be called for hard dep with unknown status")
+			t.Error("TreatUnknownAs: StatusDown did not refuse the request")
 		}
 		if w.Code != http.StatusServiceUnavailable {
 			t.Errorf("expected 503, got %d", w.Code)
 		}
 	})
 
+	t.Run("the_gate_does_not_depend_on_status_ordinals", func(t *testing.T) {
+		// The property the old behaviour accidentally relied on: that
+		// StatusUnknown sorts after StatusDown. The decision is explicit now,
+		// so the same unknown state produces different outcomes purely from
+		// configuration.
+		route := &gateRoute{method: "GET", path: "/api/users",
+			deps: []DepRequirement{NewHardRequirement("db")}}
+
+		for _, treatAs := range []Status{StatusUp, StatusDegraded, StatusDown} {
+			cfg := MiddlewareConfig{
+				StateStore:     NewDepStateStore(DefaultDepStateStoreConfig()),
+				UseCache:       false,
+				TreatUnknownAs: treatAs,
+			}
+			served := false
+			handler := DependencyGateMiddleware(cfg)(http.HandlerFunc(
+				func(w http.ResponseWriter, r *http.Request) {
+					served = true
+					w.WriteHeader(http.StatusOK)
+				}))
+			req := withMatchedRoute(httptest.NewRequest("GET", "/api/users", nil), route)
+			handler.ServeHTTP(httptest.NewRecorder(), req)
+
+			// A hard requirement has MinStatus == StatusUp, so only StatusUp
+			// passes; Degraded and Down both exceed it.
+			want := treatAs == StatusUp
+			if served != want {
+				t.Errorf("TreatUnknownAs=%v: served=%v, want %v", treatAs, served, want)
+			}
+		}
+	})
+
 	t.Run("executes_passive_check_on_demand", func(t *testing.T) {
 		// Executes_passive_check_on_demand should run passive check via cache.
-		depMap := NewRouteDepMap()
-		depMap.Register("GET:/api/users", []DepRequirement{NewHardRequirement("ext-api")})
+		route := &gateRoute{method: "GET", path: "/api/users", deps: []DepRequirement{NewHardRequirement("ext-api")}}
 
 		registry := newMockMwRegistry()
-		passiveCheck := NewCheck("ext-api", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		passiveCheck := NewCheck("ext-api", func(ctx context.Context, resolver rextension.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 10*time.Millisecond)
 		}, WithCheckMode(CheckModePassive))
 		registry.Register(passiveCheck)
@@ -910,11 +1011,10 @@ func TestDependencyGateMiddleware(t *testing.T) {
 		checkCache.result = NewCheckResult(StatusUp, "ok", 10*time.Millisecond)
 
 		cfg := MiddlewareConfig{
-			RouteDepMap: depMap,
-			StateStore:  NewDepStateStore(DefaultDepStateStoreConfig()),
-			Registry:    registry,
-			CheckCache:  checkCache,
-			UseCache:    false,
+			StateStore: NewDepStateStore(DefaultDepStateStoreConfig()),
+			Registry:   registry,
+			CheckCache: checkCache,
+			UseCache:   false,
 		}
 		mw := DependencyGateMiddleware(cfg)
 
@@ -923,7 +1023,7 @@ func TestDependencyGateMiddleware(t *testing.T) {
 			nextCalled = true
 		})
 
-		req := httptest.NewRequest("GET", "/api/users", nil)
+		req := withMatchedRoute(httptest.NewRequest("GET", "/api/users", nil), route)
 		w := httptest.NewRecorder()
 		mw(next).ServeHTTP(w, req)
 
@@ -934,11 +1034,10 @@ func TestDependencyGateMiddleware(t *testing.T) {
 
 	t.Run("uses_resolver_from_config", func(t *testing.T) {
 		// Uses_resolver_from_config should extract resolver when configured.
-		depMap := NewRouteDepMap()
-		depMap.Register("GET:/api/users", []DepRequirement{NewHardRequirement("ext-api")})
+		route := &gateRoute{method: "GET", path: "/api/users", deps: []DepRequirement{NewHardRequirement("ext-api")}}
 
 		registry := newMockMwRegistry()
-		passiveCheck := NewCheck("ext-api", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		passiveCheck := NewCheck("ext-api", func(ctx context.Context, resolver rextension.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 10*time.Millisecond)
 		}, WithCheckMode(CheckModePassive))
 		registry.Register(passiveCheck)
@@ -947,12 +1046,11 @@ func TestDependencyGateMiddleware(t *testing.T) {
 		checkCache.result = NewCheckResult(StatusUp, "ok", 10*time.Millisecond)
 
 		cfg := MiddlewareConfig{
-			RouteDepMap: depMap,
-			StateStore:  NewDepStateStore(DefaultDepStateStoreConfig()),
-			Registry:    registry,
-			CheckCache:  checkCache,
-			Resolver:    &mockMwResolver{},
-			UseCache:    false,
+			StateStore: NewDepStateStore(DefaultDepStateStoreConfig()),
+			Registry:   registry,
+			CheckCache: checkCache,
+			Resolver:   &mockMwResolver{},
+			UseCache:   false,
 		}
 		mw := DependencyGateMiddleware(cfg)
 
@@ -961,7 +1059,7 @@ func TestDependencyGateMiddleware(t *testing.T) {
 			nextCalled = true
 		})
 
-		req := httptest.NewRequest("GET", "/api/users", nil)
+		req := withMatchedRoute(httptest.NewRequest("GET", "/api/users", nil), route)
 		w := httptest.NewRecorder()
 		mw(next).ServeHTTP(w, req)
 
@@ -977,6 +1075,7 @@ func TestDependencyGateMiddleware(t *testing.T) {
 
 func TestRouteResolverMiddleware(t *testing.T) {
 	t.Run("injects_route_id_into_request_context", func(t *testing.T) {
+		route := &gateRoute{method: "GET", path: "/api/users", deps: []DepRequirement{NewHardRequirement("db")}}
 		// Injects_route_id_into_request_context should store route ID in r.Context().
 		mw := RouteResolverMiddleware()
 
@@ -985,7 +1084,7 @@ func TestRouteResolverMiddleware(t *testing.T) {
 			capturedCtx = r.Context()
 		})
 
-		req := httptest.NewRequest("GET", "/api/users", nil)
+		req := withMatchedRoute(httptest.NewRequest("GET", "/api/users", nil), route)
 		w := httptest.NewRecorder()
 		mw(next).ServeHTTP(w, req)
 

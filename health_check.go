@@ -5,9 +5,8 @@ package health
 
 import (
 	"context"
+	rx "github.com/kryovyx/rextension"
 	"time"
-
-	"github.com/kryovyx/dix"
 )
 
 // CheckMode determines when a health check is executed.
@@ -78,13 +77,13 @@ type HealthCheck interface {
 
 // CheckFunc is a function type that implements a health check.
 // The resolver provides access to dependencies registered in the DI container.
-type CheckFunc func(ctx context.Context, resolver dix.Resolver) *CheckResult
+type CheckFunc func(ctx context.Context, resolver rx.Resolver) *CheckResult
 
 // checkImpl is the default HealthCheck implementation.
 type checkImpl struct {
 	name      string
 	fn        CheckFunc
-	resolver  dix.Resolver
+	resolver  rx.Resolver
 	timeout   time.Duration
 	readiness bool
 	tags      []string
@@ -163,7 +162,7 @@ func (c *checkImpl) Mode() CheckMode         { return c.mode }
 func (c *checkImpl) CacheTTL() time.Duration { return c.cacheTTL }
 
 // SetResolver sets the resolver for this health check.
-func (c *checkImpl) SetResolver(resolver dix.Resolver) {
+func (c *checkImpl) SetResolver(resolver rx.Resolver) {
 	c.resolver = resolver
 }
 

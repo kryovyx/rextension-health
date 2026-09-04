@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kryovyx/dix"
+	rx "github.com/kryovyx/rextension"
 )
 
 // --------------------------------------------------------------------------
@@ -63,7 +63,7 @@ func (m *mockRouteContext) Request() *http.Request {
 	return req
 }
 
-func (m *mockRouteContext) Resolver() dix.Resolver {
+func (m *mockRouteContext) Resolver() rx.Resolver {
 	return &mockRouteResolver{}
 }
 
@@ -91,7 +91,7 @@ func (m *mockRouteContext) GetValue(key interface{}) interface{} {
 }
 func (m *mockRouteContext) Param(name string) string { return "" }
 
-// mockRouteResolver implements dix.Resolver for route tests.
+// mockRouteResolver implements rx.Resolver for route tests.
 type mockRouteResolver struct{}
 
 func (m *mockRouteResolver) Resolve(target interface{}) error    { return nil }

@@ -6,6 +6,7 @@ package health
 
 import (
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -103,23 +104,25 @@ func TestCircuitBreaker_Allow(t *testing.T) {
 	})
 
 	t.Run("allows_limited_calls_when_half_open", func(t *testing.T) {
-		// Allows_limited_calls_when_half_open should allow up to HalfOpenMaxCalls.
-		cfg := CircuitBreakerConfig{
-			FailureThreshold: 1,
-			Timeout:          1 * time.Millisecond,
-			HalfOpenMaxCalls: 1,
-		}
-		cb := NewCircuitBreaker(cfg)
+		synctest.Test(t, func(t *testing.T) {
+			// Allows_limited_calls_when_half_open should allow up to HalfOpenMaxCalls.
+			cfg := CircuitBreakerConfig{
+				FailureThreshold: 1,
+				Timeout:          30 * time.Second,
+				HalfOpenMaxCalls: 1,
+			}
+			cb := NewCircuitBreaker(cfg)
 
-		cb.Failure()
-		time.Sleep(5 * time.Millisecond) // Wait for transition to half-open
+			cb.Failure()
+			synctest.Sleep(31 * time.Second) // Wait for transition to half-open
 
-		if !cb.Allow() {
-			t.Fatal("expected first call allowed in half-open")
-		}
-		if cb.Allow() {
-			t.Fatal("expected second call denied in half-open")
-		}
+			if !cb.Allow() {
+				t.Fatal("expected first call allowed in half-open")
+			}
+			if cb.Allow() {
+				t.Fatal("expected second call denied in half-open")
+			}
+		})
 	})
 }
 
@@ -129,26 +132,28 @@ func TestCircuitBreaker_Allow(t *testing.T) {
 
 func TestCircuitBreaker_Success(t *testing.T) {
 	t.Run("closes_circuit_after_threshold", func(t *testing.T) {
-		// Closes_circuit_after_threshold should transition from half-open to closed.
-		cfg := CircuitBreakerConfig{
-			FailureThreshold: 1,
-			SuccessThreshold: 2,
-			Timeout:          1 * time.Millisecond,
-			HalfOpenMaxCalls: 5,
-		}
-		cb := NewCircuitBreaker(cfg)
+		synctest.Test(t, func(t *testing.T) {
+			// Closes_circuit_after_threshold should transition from half-open to closed.
+			cfg := CircuitBreakerConfig{
+				FailureThreshold: 1,
+				SuccessThreshold: 2,
+				Timeout:          30 * time.Second,
+				HalfOpenMaxCalls: 5,
+			}
+			cb := NewCircuitBreaker(cfg)
 
-		cb.Failure()
-		time.Sleep(5 * time.Millisecond) // -> half-open
+			cb.Failure()
+			synctest.Sleep(31 * time.Second) // -> half-open
 
-		cb.Allow()
-		cb.Success()
-		cb.Allow()
-		cb.Success()
+			cb.Allow()
+			cb.Success()
+			cb.Allow()
+			cb.Success()
 
-		if cb.State() != CircuitClosed {
-			t.Fatalf("expected CircuitClosed after successes, got %v", cb.State())
-		}
+			if cb.State() != CircuitClosed {
+				t.Fatalf("expected CircuitClosed after successes, got %v", cb.State())
+			}
+		})
 	})
 
 	t.Run("resets_failure_count_when_closed", func(t *testing.T) {
@@ -189,22 +194,24 @@ func TestCircuitBreaker_Failure(t *testing.T) {
 	})
 
 	t.Run("returns_to_open_from_half_open_on_failure", func(t *testing.T) {
-		// Returns_to_open_from_half_open_on_failure should reopen circuit.
-		cfg := CircuitBreakerConfig{
-			FailureThreshold: 1,
-			Timeout:          1 * time.Millisecond,
-			HalfOpenMaxCalls: 1,
-		}
-		cb := NewCircuitBreaker(cfg)
+		synctest.Test(t, func(t *testing.T) {
+			// Returns_to_open_from_half_open_on_failure should reopen circuit.
+			cfg := CircuitBreakerConfig{
+				FailureThreshold: 1,
+				Timeout:          30 * time.Second,
+				HalfOpenMaxCalls: 1,
+			}
+			cb := NewCircuitBreaker(cfg)
 
-		cb.Failure()
-		time.Sleep(5 * time.Millisecond) // -> half-open
-		cb.Allow()
-		cb.Failure()
+			cb.Failure()
+			synctest.Sleep(31 * time.Second) // -> half-open
+			cb.Allow()
+			cb.Failure()
 
-		if cb.State() != CircuitOpen {
-			t.Fatalf("expected CircuitOpen after half-open failure, got %v", cb.State())
-		}
+			if cb.State() != CircuitOpen {
+				t.Fatalf("expected CircuitOpen after half-open failure, got %v", cb.State())
+			}
+		})
 	})
 }
 
@@ -297,84 +304,90 @@ func TestCircuitBreaker_SyncState(t *testing.T) {
 	})
 
 	t.Run("syncs_status_degraded_when_half_open", func(t *testing.T) {
-		// Syncs_status_degraded_when_half_open should mark degraded on transition.
-		store := NewDepStateStore(DefaultDepStateStoreConfig())
-		cfg := CircuitBreakerConfig{
-			FailureThreshold: 1,
-			Timeout:          1 * time.Millisecond,
-			HalfOpenMaxCalls: 1,
-		}
-		cb := NewCircuitBreakerWithStore(cfg, store, "db")
+		synctest.Test(t, func(t *testing.T) {
+			// Syncs_status_degraded_when_half_open should mark degraded on transition.
+			store := NewDepStateStore(DefaultDepStateStoreConfig())
+			cfg := CircuitBreakerConfig{
+				FailureThreshold: 1,
+				Timeout:          30 * time.Second,
+				HalfOpenMaxCalls: 1,
+			}
+			cb := NewCircuitBreakerWithStore(cfg, store, "db")
 
-		cb.Failure()                     // Opens circuit
-		time.Sleep(5 * time.Millisecond) // Wait for timeout
-		cb.Allow()                       // Triggers half-open check
+			cb.Failure()                     // Opens circuit
+			synctest.Sleep(31 * time.Second) // Wait for timeout
+			cb.Allow()                       // Triggers half-open check
 
-		state := store.Get("db")
-		if state == nil {
-			t.Fatal("expected state in store")
-		}
-		if state.Status != StatusDegraded {
-			t.Errorf("expected StatusDegraded when half-open, got %s", state.Status)
-		}
-		if state.CircuitState != CircuitHalfOpen {
-			t.Errorf("expected CircuitHalfOpen, got %v", state.CircuitState)
-		}
+			state := store.Get("db")
+			if state == nil {
+				t.Fatal("expected state in store")
+			}
+			if state.Status != StatusDegraded {
+				t.Errorf("expected StatusDegraded when half-open, got %s", state.Status)
+			}
+			if state.CircuitState != CircuitHalfOpen {
+				t.Errorf("expected CircuitHalfOpen, got %v", state.CircuitState)
+			}
+		})
 	})
 
 	t.Run("syncs_status_down_on_half_open_failure", func(t *testing.T) {
-		// Syncs_status_down_on_half_open_failure should return to Down.
-		store := NewDepStateStore(DefaultDepStateStoreConfig())
-		cfg := CircuitBreakerConfig{
-			FailureThreshold: 1,
-			Timeout:          1 * time.Millisecond,
-			HalfOpenMaxCalls: 1,
-		}
-		cb := NewCircuitBreakerWithStore(cfg, store, "ext")
+		synctest.Test(t, func(t *testing.T) {
+			// Syncs_status_down_on_half_open_failure should return to Down.
+			store := NewDepStateStore(DefaultDepStateStoreConfig())
+			cfg := CircuitBreakerConfig{
+				FailureThreshold: 1,
+				Timeout:          30 * time.Second,
+				HalfOpenMaxCalls: 1,
+			}
+			cb := NewCircuitBreakerWithStore(cfg, store, "ext")
 
-		cb.Failure()                     // Opens circuit
-		time.Sleep(5 * time.Millisecond) // Wait for timeout -> half-open
-		cb.Allow()                       // Get permission
-		cb.Failure()                     // Fail in half-open -> back to open
+			cb.Failure()                     // Opens circuit
+			synctest.Sleep(31 * time.Second) // Wait for timeout -> half-open
+			cb.Allow()                       // Get permission
+			cb.Failure()                     // Fail in half-open -> back to open
 
-		state := store.Get("ext")
-		if state == nil {
-			t.Fatal("expected state in store")
-		}
-		if state.Status != StatusDown {
-			t.Errorf("expected StatusDown after half-open failure, got %s", state.Status)
-		}
-		if state.CircuitState != CircuitOpen {
-			t.Errorf("expected CircuitOpen, got %v", state.CircuitState)
-		}
+			state := store.Get("ext")
+			if state == nil {
+				t.Fatal("expected state in store")
+			}
+			if state.Status != StatusDown {
+				t.Errorf("expected StatusDown after half-open failure, got %s", state.Status)
+			}
+			if state.CircuitState != CircuitOpen {
+				t.Errorf("expected CircuitOpen, got %v", state.CircuitState)
+			}
+		})
 	})
 
 	t.Run("syncs_status_up_on_success_close", func(t *testing.T) {
-		// Syncs_status_up_on_success_close should set Up when circuit closes.
-		store := NewDepStateStore(DefaultDepStateStoreConfig())
-		cfg := CircuitBreakerConfig{
-			FailureThreshold: 1,
-			SuccessThreshold: 1,
-			Timeout:          1 * time.Millisecond,
-			HalfOpenMaxCalls: 2,
-		}
-		cb := NewCircuitBreakerWithStore(cfg, store, "svc")
+		synctest.Test(t, func(t *testing.T) {
+			// Syncs_status_up_on_success_close should set Up when circuit closes.
+			store := NewDepStateStore(DefaultDepStateStoreConfig())
+			cfg := CircuitBreakerConfig{
+				FailureThreshold: 1,
+				SuccessThreshold: 1,
+				Timeout:          30 * time.Second,
+				HalfOpenMaxCalls: 2,
+			}
+			cb := NewCircuitBreakerWithStore(cfg, store, "svc")
 
-		cb.Failure()                     // Opens circuit
-		time.Sleep(5 * time.Millisecond) // Wait for timeout -> half-open
-		cb.Allow()                       // Get permission
-		cb.Success()                     // Success closes circuit
+			cb.Failure()                     // Opens circuit
+			synctest.Sleep(31 * time.Second) // Wait for timeout -> half-open
+			cb.Allow()                       // Get permission
+			cb.Success()                     // Success closes circuit
 
-		state := store.Get("svc")
-		if state == nil {
-			t.Fatal("expected state in store")
-		}
-		if state.Status != StatusUp {
-			t.Errorf("expected StatusUp after success, got %s", state.Status)
-		}
-		if state.CircuitState != CircuitClosed {
-			t.Errorf("expected CircuitClosed, got %v", state.CircuitState)
-		}
+			state := store.Get("svc")
+			if state == nil {
+				t.Fatal("expected state in store")
+			}
+			if state.Status != StatusUp {
+				t.Errorf("expected StatusUp after success, got %s", state.Status)
+			}
+			if state.CircuitState != CircuitClosed {
+				t.Errorf("expected CircuitClosed, got %v", state.CircuitState)
+			}
+		})
 	})
 
 	t.Run("handles_nil_state_in_store", func(t *testing.T) {

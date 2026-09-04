@@ -7,8 +7,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/kryovyx/dix"
-	"github.com/kryovyx/rextension"
+	rx "github.com/kryovyx/rextension"
 )
 
 // Registry defines the interface for managing health checks.
@@ -43,7 +42,7 @@ type Registry interface {
 	// Stop halts automatic health check execution.
 	Stop()
 	// SetResolver sets the DI resolver for all health checks to access dependencies.
-	SetResolver(resolver dix.Resolver)
+	SetResolver(resolver rx.Resolver)
 	// SetLogger sets the logger used for internal trace/debug logs.
-	SetLogger(l rextension.Logger)
+	SetLogger(l rx.Logger)
 }

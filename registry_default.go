@@ -8,8 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kryovyx/dix"
-	"github.com/kryovyx/rextension"
+	rx "github.com/kryovyx/rextension"
 )
 
 // registry is the default implementation of Registry.
@@ -18,8 +17,8 @@ type registry struct {
 	mu       sync.RWMutex
 	stopChan chan struct{}
 	running  bool
-	resolver dix.Resolver
-	logger   rextension.Logger
+	resolver rx.Resolver
+	logger   rx.Logger
 }
 
 // NewRegistry creates a new health check registry.
@@ -34,7 +33,7 @@ func (r *registry) Register(check HealthCheck) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	// Set resolver on the check if it supports it
-	if setter, ok := check.(interface{ SetResolver(dix.Resolver) }); ok && r.resolver != nil {
+	if setter, ok := check.(interface{ SetResolver(rx.Resolver) }); ok && r.resolver != nil {
 		setter.SetResolver(r.resolver)
 	}
 	r.checks[check.Name()] = check
@@ -246,20 +245,20 @@ func (r *registry) executeAndReport(stateStore DepStateStore) {
 
 // SetResolver sets the DI resolver for all health checks.
 // Must be called before registering checks, or existing checks won't have the resolver.
-func (r *registry) SetResolver(resolver dix.Resolver) {
+func (r *registry) SetResolver(resolver rx.Resolver) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.resolver = resolver
 	// Update existing checks
 	for _, check := range r.checks {
-		if setter, ok := check.(interface{ SetResolver(dix.Resolver) }); ok {
+		if setter, ok := check.(interface{ SetResolver(rx.Resolver) }); ok {
 			setter.SetResolver(resolver)
 		}
 	}
 }
 
 // SetLogger sets the logger for internal trace/debug logs.
-func (r *registry) SetLogger(l rextension.Logger) {
+func (r *registry) SetLogger(l rx.Logger) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.logger = l

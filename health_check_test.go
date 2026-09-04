@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kryovyx/dix"
+	rx "github.com/kryovyx/rextension"
 )
 
 // --------------------------------------------------------------------------
@@ -53,7 +53,7 @@ func TestCheckModeString(t *testing.T) {
 func TestNewCheck(t *testing.T) {
 	t.Run("creates_check_with_defaults", func(t *testing.T) {
 		// Creates_check_with_defaults should use default values.
-		check := NewCheck("test", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		check := NewCheck("test", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		})
 
@@ -77,7 +77,7 @@ func TestNewCheck(t *testing.T) {
 	t.Run("creates_check_with_custom_timeout", func(t *testing.T) {
 		// Creates_check_with_custom_timeout should override timeout.
 		check := NewCheck("test",
-			func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+			func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 				return NewCheckResult(StatusUp, "ok", 0)
 			},
 			WithTimeout(10*time.Second),
@@ -91,7 +91,7 @@ func TestNewCheck(t *testing.T) {
 	t.Run("creates_check_with_readiness_false", func(t *testing.T) {
 		// Creates_check_with_readiness_false should disable readiness.
 		check := NewCheck("test",
-			func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+			func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 				return NewCheckResult(StatusUp, "ok", 0)
 			},
 			WithReadiness(false),
@@ -105,7 +105,7 @@ func TestNewCheck(t *testing.T) {
 	t.Run("creates_check_with_tags", func(t *testing.T) {
 		// Creates_check_with_tags should add tags.
 		check := NewCheck("test",
-			func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+			func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 				return NewCheckResult(StatusUp, "ok", 0)
 			},
 			WithTags("db", "critical"),
@@ -119,7 +119,7 @@ func TestNewCheck(t *testing.T) {
 	t.Run("creates_check_with_passive_mode", func(t *testing.T) {
 		// Creates_check_with_passive_mode should set mode to Passive.
 		check := NewCheck("test",
-			func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+			func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 				return NewCheckResult(StatusUp, "ok", 0)
 			},
 			WithCheckMode(CheckModePassive),
@@ -133,7 +133,7 @@ func TestNewCheck(t *testing.T) {
 	t.Run("creates_check_with_cache_ttl", func(t *testing.T) {
 		// Creates_check_with_cache_ttl should set cacheTTL.
 		check := NewCheck("test",
-			func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+			func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 				return NewCheckResult(StatusUp, "ok", 0)
 			},
 			WithCacheTTL(60*time.Second),
@@ -147,7 +147,7 @@ func TestNewCheck(t *testing.T) {
 	t.Run("on_demand_mode_forces_zero_cache_ttl", func(t *testing.T) {
 		// On_demand_mode_forces_zero_cache_ttl should ignore cacheTTL option.
 		check := NewCheck("test",
-			func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+			func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 				return NewCheckResult(StatusUp, "ok", 0)
 			},
 			WithCheckMode(CheckModeOnDemand),
@@ -167,7 +167,7 @@ func TestNewCheck(t *testing.T) {
 func TestCheckExecute(t *testing.T) {
 	t.Run("executes_and_returns_result", func(t *testing.T) {
 		// Executes_and_returns_result should execute check function.
-		check := NewCheck("test", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		check := NewCheck("test", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			time.Sleep(10 * time.Millisecond)
 			return NewCheckResult(StatusUp, "healthy", 0)
 		})
@@ -184,7 +184,7 @@ func TestCheckExecute(t *testing.T) {
 	t.Run("returns_down_on_timeout", func(t *testing.T) {
 		// Returns_down_on_timeout should return StatusDown when check times out.
 		check := NewCheck("slow",
-			func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+			func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 				time.Sleep(200 * time.Millisecond)
 				return NewCheckResult(StatusUp, "ok", 0)
 			},
@@ -202,7 +202,7 @@ func TestCheckExecute(t *testing.T) {
 
 	t.Run("recovers_from_panic", func(t *testing.T) {
 		// Recovers_from_panic should return StatusDown after panic.
-		check := NewCheck("panicky", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		check := NewCheck("panicky", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			panic("test panic")
 		})
 
@@ -222,7 +222,7 @@ func TestRegistry(t *testing.T) {
 		// Registers_and_retrieves_check should store and return check.
 		registry := NewRegistry()
 
-		check1 := NewCheck("db", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		check1 := NewCheck("db", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		}, WithTags("database"))
 
@@ -237,10 +237,10 @@ func TestRegistry(t *testing.T) {
 		// Returns_all_checks should return all registered checks.
 		registry := NewRegistry()
 
-		check1 := NewCheck("db", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		check1 := NewCheck("db", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		})
-		check2 := NewCheck("cache", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		check2 := NewCheck("cache", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		})
 
@@ -257,11 +257,11 @@ func TestRegistry(t *testing.T) {
 		// Returns_readiness_checks_only should filter by readiness.
 		registry := NewRegistry()
 
-		check1 := NewCheck("db", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		check1 := NewCheck("db", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		}) // Default readiness true
 
-		check2 := NewCheck("optional", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		check2 := NewCheck("optional", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		}, WithReadiness(false))
 
@@ -278,11 +278,11 @@ func TestRegistry(t *testing.T) {
 		// Returns_checks_by_tags should filter by tag.
 		registry := NewRegistry()
 
-		check1 := NewCheck("db", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		check1 := NewCheck("db", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		}, WithTags("database"))
 
-		check2 := NewCheck("cache", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		check2 := NewCheck("cache", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		}, WithTags("cache"))
 
@@ -299,11 +299,11 @@ func TestRegistry(t *testing.T) {
 		// Returns_active_checks_only should filter by Active mode.
 		registry := NewRegistry()
 
-		check1 := NewCheck("active-check", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		check1 := NewCheck("active-check", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		}, WithCheckMode(CheckModeActive))
 
-		check2 := NewCheck("passive-check", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		check2 := NewCheck("passive-check", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		}, WithCheckMode(CheckModePassive))
 
@@ -323,11 +323,11 @@ func TestRegistry(t *testing.T) {
 		// Returns_passive_checks_only should filter by Passive mode.
 		registry := NewRegistry()
 
-		check1 := NewCheck("active-check", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		check1 := NewCheck("active-check", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		}, WithCheckMode(CheckModeActive))
 
-		check2 := NewCheck("passive-check", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		check2 := NewCheck("passive-check", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		}, WithCheckMode(CheckModePassive))
 
@@ -348,7 +348,7 @@ func TestRegistryUnregister(t *testing.T) {
 	t.Run("removes_check", func(t *testing.T) {
 		// Removes_check should remove check from registry.
 		registry := NewRegistry()
-		check := NewCheck("temp", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		check := NewCheck("temp", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		})
 
@@ -369,10 +369,10 @@ func TestRegistryExecuteAll(t *testing.T) {
 		// Executes_all_checks should run all checks concurrently.
 		registry := NewRegistry()
 
-		registry.Register(NewCheck("fast1", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		registry.Register(NewCheck("fast1", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		}))
-		registry.Register(NewCheck("fast2", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		registry.Register(NewCheck("fast2", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusDegraded, "slow", 0)
 		}))
 
@@ -394,10 +394,10 @@ func TestRegistryExecuteByTags(t *testing.T) {
 		// Executes_checks_matching_tags should run only matching checks.
 		registry := NewRegistry()
 
-		registry.Register(NewCheck("db", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		registry.Register(NewCheck("db", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		}, WithTags("database")))
-		registry.Register(NewCheck("cache", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		registry.Register(NewCheck("cache", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		}, WithTags("cache")))
 
@@ -416,7 +416,7 @@ func TestRegistryExecuteCheck(t *testing.T) {
 		// Executes_single_check_by_name should run specific check.
 		registry := NewRegistry()
 
-		registry.Register(NewCheck("target", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		registry.Register(NewCheck("target", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "healthy", 0)
 		}))
 
@@ -446,7 +446,7 @@ func TestRegistrySetResolver(t *testing.T) {
 		registry := NewRegistry()
 
 		// Register check before resolver
-		check := NewCheck("test", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		check := NewCheck("test", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		})
 		registry.Register(check)
@@ -476,7 +476,7 @@ func TestRegistryStart(t *testing.T) {
 		registry := NewRegistry()
 		stateStore := NewDepStateStore(DefaultDepStateStoreConfig())
 
-		check := NewCheck("db", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		check := NewCheck("db", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 10*time.Millisecond)
 		}, WithCheckMode(CheckModeActive))
 		registry.Register(check)
@@ -512,7 +512,7 @@ func TestRegistryStart(t *testing.T) {
 		registry := NewRegistry()
 		stateStore := NewDepStateStore(DefaultDepStateStoreConfig())
 
-		check := NewCheck("failing-db", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		check := NewCheck("failing-db", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusDown, "connection failed", 10*time.Millisecond)
 		}, WithCheckMode(CheckModeActive))
 		registry.Register(check)
@@ -536,7 +536,7 @@ func TestRegistryStart(t *testing.T) {
 		registry.SetLogger(&mockLoggerImpl{})
 		stateStore := NewDepStateStore(DefaultDepStateStoreConfig())
 
-		check := NewCheck("logged-check", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		check := NewCheck("logged-check", func(ctx context.Context, resolver rx.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 10*time.Millisecond)
 		}, WithCheckMode(CheckModeActive))
 		registry.Register(check)
@@ -570,7 +570,7 @@ func TestRegistryStop(t *testing.T) {
 	})
 }
 
-// mockTestResolver implements dix.Resolver for testing.
+// mockTestResolver implements rx.Resolver for testing.
 type mockTestResolver struct{}
 
 func (m *mockTestResolver) Resolve(target interface{}) error    { return nil }

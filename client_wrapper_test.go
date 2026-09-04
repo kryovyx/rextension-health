@@ -75,10 +75,9 @@ func TestWrapHTTPClient(t *testing.T) {
 func TestWrappedHTTPClient_Do(t *testing.T) {
 	t.Run("reports_success_on_2xx", func(t *testing.T) {
 		// Reports_success_on_2xx should update state store with success.
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
-		defer server.Close()
 
 		store := NewDepStateStore(DefaultDepStateStoreConfig())
 		store.Register("api")
@@ -101,10 +100,9 @@ func TestWrappedHTTPClient_Do(t *testing.T) {
 
 	t.Run("reports_failure_on_5xx", func(t *testing.T) {
 		// Reports_failure_on_5xx should update state store with failure.
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
-		defer server.Close()
 
 		store := NewDepStateStore(DefaultDepStateStoreConfig())
 		store.Register("api")
@@ -157,10 +155,9 @@ func TestWrappedHTTPClient_Do(t *testing.T) {
 
 	t.Run("notifies_circuit_breaker_on_success", func(t *testing.T) {
 		// Notifies_circuit_breaker_on_success should call cb.Success().
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
-		defer server.Close()
 
 		cb := NewCircuitBreaker(CircuitBreakerConfig{
 			FailureThreshold: 1,
@@ -185,10 +182,9 @@ func TestWrappedHTTPClient_Do(t *testing.T) {
 
 	t.Run("notifies_circuit_breaker_on_failure", func(t *testing.T) {
 		// Notifies_circuit_breaker_on_failure should call cb.Failure().
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
-		defer server.Close()
 
 		cb := NewCircuitBreaker(CircuitBreakerConfig{FailureThreshold: 1, Timeout: time.Hour})
 		client := WrapHTTPClient(server.Client(), "api", nil, WithCircuitBreaker(cb))
@@ -204,7 +200,7 @@ func TestWrappedHTTPClient_Do(t *testing.T) {
 	t.Run("retries_on_5xx_with_backoff", func(t *testing.T) {
 		// Retries_on_5xx_with_backoff should retry and sleep between attempts.
 		requestCount := 0
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestCount++
 			if requestCount < 3 {
 				w.WriteHeader(http.StatusInternalServerError)
@@ -212,7 +208,6 @@ func TestWrappedHTTPClient_Do(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			}
 		}))
-		defer server.Close()
 
 		store := NewDepStateStore(DefaultDepStateStoreConfig())
 		store.Register("api")
@@ -243,13 +238,12 @@ func TestWrappedHTTPClient_Do(t *testing.T) {
 func TestWrappedHTTPClient_Get(t *testing.T) {
 	t.Run("performs_get_request", func(t *testing.T) {
 		// Performs_get_request should issue GET and return response.
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodGet {
 				t.Fatalf("expected GET, got %s", r.Method)
 			}
 			w.WriteHeader(http.StatusOK)
 		}))
-		defer server.Close()
 
 		client := WrapHTTPClient(server.Client(), "get-test", nil)
 		resp, err := client.Get(context.Background(), server.URL)
@@ -278,7 +272,7 @@ func TestWrappedHTTPClient_Get(t *testing.T) {
 func TestWrappedHTTPClient_Post(t *testing.T) {
 	t.Run("performs_post_request", func(t *testing.T) {
 		// Performs_post_request should issue POST with content type.
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodPost {
 				t.Fatalf("expected POST, got %s", r.Method)
 			}
@@ -287,7 +281,6 @@ func TestWrappedHTTPClient_Post(t *testing.T) {
 			}
 			w.WriteHeader(http.StatusCreated)
 		}))
-		defer server.Close()
 
 		client := WrapHTTPClient(server.Client(), "post-test", nil)
 		resp, err := client.Post(context.Background(), server.URL, "application/json", []byte(`{}`))

@@ -15,11 +15,10 @@ package health
 
 import (
 	"context"
-	"strings"
+	"errors"
+	"time"
 
-	"github.com/kryovyx/dix"
 	rx "github.com/kryovyx/rextension"
-	rxevent "github.com/kryovyx/rextension/event"
 )
 
 // HealthRouterName is the default name for the dedicated health router.
@@ -29,7 +28,7 @@ const HealthRouterName = "health"
 type HealthExtension struct {
 	cfg           Config
 	routerName    string
-	resolver      dix.Resolver
+	resolver      rx.Resolver
 	logger        rx.Logger
 	stateStore    DepStateStore
 	registry      Registry
@@ -39,27 +38,34 @@ type HealthExtension struct {
 }
 
 // NewHealthExtension constructs a health extension instance.
+//
+// A nil cfg takes the defaults. A non-nil cfg is used **verbatim** (D22/O6).
+//
+// It used to merge field by field — "copy this one if it is non-zero" — which
+// looked like a convenience and behaved as a trap:
+//
+//   - Fields the merge simply forgot were silently ignored. Any value an
+//     application set for them was discarded, and there was nothing to see:
+//     no error, no log line, just the default.
+//   - Fields copied *unconditionally* had the opposite problem. A partial
+//     struct literal like &Config{LivePath: "/x"} zeroed them, so setting one
+//     unrelated field turned another off.
+//   - Zero and "unset" were indistinguishable, so a deliberate zero could not
+//     be expressed at all.
+//
+// Build the config with NewConfig and the With* options; that is the shape
+// that cannot drift out of step with the struct:
+//
+//	health.NewConfig(health.WithSomething(...))
+//
+// ⚠ A partial struct literal now leaves the rest of the fields at their zero
+// values rather than at their defaults. That is the breaking half of this
+// change, and it is deliberate: silently substituting a default for a field
+// the caller wrote is what produced the traps above.
 func NewHealthExtension(cfg *Config) rx.Extension {
 	c := NewDefaultConfig()
 	if cfg != nil {
-		if cfg.LivePath != "" {
-			c.LivePath = cfg.LivePath
-		}
-		if cfg.ReadyPath != "" {
-			c.ReadyPath = cfg.ReadyPath
-		}
-		if cfg.StatusPath != "" {
-			c.StatusPath = cfg.StatusPath
-		}
-		if cfg.SnapshotTTL != 0 {
-			c.SnapshotTTL = cfg.SnapshotTTL
-		}
-		c.AtDefaultAddr = cfg.AtDefaultAddr
-		if cfg.Router.Addr != "" {
-			c.Router = cfg.Router
-		}
-		c.StateStoreConfig = cfg.StateStoreConfig
-		c.EnableDependencyGate = cfg.EnableDependencyGate
+		c = cfg
 	}
 	return &HealthExtension{cfg: *c}
 }
@@ -93,6 +99,19 @@ func (e *HealthExtension) OnInitialize(ctx context.Context, r rx.Rex) error {
 	e.routeDepMap = NewRouteDepMap()
 	e.checkCache = NewCheckCache(e.stateStore, logger)
 
+	// Register the declared checks (O2).
+	//
+	// This is how an application wires checks now that OnInitialize runs from
+	// Run: it cannot resolve the registry beforehand and call Register,
+	// because the registry is created here.
+	for _, check := range e.cfg.Checks {
+		e.registry.Register(check)
+		logger.Debug("Registered declared health check %s", check.Name())
+	}
+	if n := len(e.cfg.Checks); n > 0 {
+		logger.Info("Registered %d declared health check(s)", n)
+	}
+
 	// Expose via DI
 	container := r.Container()
 	container.Instance(e.stateStore)
@@ -100,30 +119,32 @@ func (e *HealthExtension) OnInitialize(ctx context.Context, r rx.Rex) error {
 	container.Instance(e.snapshotCache)
 	container.Instance(e.routeDepMap)
 
-	bus := r.EventBus()
-
-	// Subscribe to route registration events
-	bus.Subscribe(rxevent.EventTypeRouterRouteRegistered, func(ev rxevent.Event) {
-		if routeEv, ok := rxevent.As[rxevent.RouterRouteRegisteredEvent](ev); ok {
-			rt := routeEv.Route
-			// Check if route implements HealthDepRoute (which embeds route.Route)
-			if hdr, ok := rt.(HealthDepRoute); ok {
-				routeID := RouteID(rt.Method(), rt.Path())
-				e.routeDepMap.Register(routeID, hdr.Dependencies())
-				logger.Info("Registered dependencies for route %s", routeID)
-			}
-		}
-	})
+	// The route-registered subscription is gone (P4.12).
+	//
+	// It existed to build an index from route identifier to dependencies,
+	// which the gate then looked up per request. The gate is handed the route
+	// directly now, so there is no index to build and no lookup to get wrong
+	// — and getting it wrong is exactly what happened: the index was keyed by
+	// the route's pattern while the gate looked up the live URL, so the gate
+	// never fired for a parameterized route.
+	//
+	// RouteDepMap is still populated below, and still exposed through the
+	// container, for applications that inspect it. It is no longer on the
+	// request path.
 
 	logger.Info("Health extension initialized for router %s", e.routerName)
 
 	// Create the dedicated health router if needed
 	if needsDedicatedRouter {
+		// errors.Is against an exported sentinel, replacing
+		// strings.Contains(err.Error(), "already exists") — which coupled this
+		// extension to the wording of another module's error message (D39).
 		if err := r.CreateRouter(e.routerName, e.cfg.Router); err != nil {
-			if !strings.Contains(err.Error(), "already exists") {
+			if !errors.Is(err, rx.ErrRouterExists) {
 				logger.Error("Failed to create health router %s: %v", e.routerName, err)
 				return err
 			}
+			logger.Debug("Health router %s already exists; reusing it", e.routerName)
 		}
 	}
 
@@ -143,6 +164,24 @@ func (e *HealthExtension) OnInitialize(ctx context.Context, r rx.Rex) error {
 // OnStart registers the health routes and starts the health check ticker.
 func (e *HealthExtension) OnStart(ctx context.Context, r rx.Rex) error {
 	logger := r.Logger()
+
+	// One synchronous check pass, before anything binds (O14).
+	//
+	// This is what makes "an unknown dependency serves" safe rather than
+	// merely convenient. Without it, every dependency is unknown for the
+	// first check interval after every boot — up to ten seconds by default —
+	// and the gate is deciding on no information at all. With it, by the time
+	// a request can arrive the states are real, and "unknown" means a check
+	// that has genuinely never produced a result.
+	//
+	// It is deliberately synchronous, which does add its own duration to
+	// startup. That is the trade: a listener that binds a moment later, in
+	// exchange for never serving on a guess. Individual checks have their own
+	// timeouts, so a hanging dependency delays the boot by its timeout rather
+	// than indefinitely.
+	if err := e.runInitialChecks(ctx, logger); err != nil {
+		return err
+	}
 
 	// Start the health check ticker if interval is configured
 	if e.cfg.CheckInterval > 0 {
@@ -235,13 +274,15 @@ func (e *HealthExtension) CheckCache() CheckCache {
 // MiddlewareConfig returns a configured MiddlewareConfig for the dependency gate.
 func (e *HealthExtension) MiddlewareConfig() MiddlewareConfig {
 	return MiddlewareConfig{
-		RouteDepMap:   e.routeDepMap,
-		StateStore:    e.stateStore,
-		SnapshotCache: e.snapshotCache,
-		Registry:      e.registry,
-		CheckCache:    e.checkCache,
-		Resolver:      e.resolver,
-		UseCache:      true,
+		RouteDepMap:    e.routeDepMap,
+		StateStore:     e.stateStore,
+		SnapshotCache:  e.snapshotCache,
+		Registry:       e.registry,
+		CheckCache:     e.checkCache,
+		Resolver:       e.resolver,
+		Logger:         e.logger,
+		TreatUnknownAs: e.cfg.TreatUnknownAs,
+		UseCache:       true,
 	}
 }
 
@@ -255,4 +296,50 @@ func (e *HealthExtension) RegisterCheck(check HealthCheck) {
 // This is a convenience method for simple health checks without options.
 func (e *HealthExtension) RegisterCheckFunc(name string, fn CheckFunc, opts ...CheckOption) {
 	e.registry.Register(NewCheck(name, fn, opts...))
+}
+
+// runInitialChecks executes every registered check once and records the
+// results, before any listener binds (O14).
+//
+// A failing check is **not** a startup failure. A dependency being down is
+// exactly the condition the gate exists to handle at request time — refusing
+// to start would mean an application could not boot while one of its
+// dependencies was restarting, which is worse than booting and refusing the
+// affected routes. What matters is that the state is known.
+func (e *HealthExtension) runInitialChecks(ctx context.Context, logger rx.Logger) error {
+	checks := e.registry.GetAll()
+	if len(checks) == 0 {
+		return nil
+	}
+
+	start := time.Now()
+	results := e.registry.ExecuteAll(ctx)
+
+	var down, degraded int
+	for name, result := range results {
+		if result == nil {
+			continue
+		}
+		e.stateStore.SetStatus(name, result.Status, result.Message)
+		switch result.Status {
+		case StatusDown:
+			down++
+		case StatusDegraded:
+			degraded++
+		}
+	}
+
+	logger.Info("Ran %d initial health check(s) in %v: %d down, %d degraded",
+		len(results), time.Since(start).Round(time.Millisecond), down, degraded)
+
+	// Any check that produced no result at all leaves its dependency unknown,
+	// which is what TreatUnknownAs then decides. Worth naming, because it is
+	// the one case the initial pass could not resolve.
+	for _, check := range checks {
+		if _, ran := results[check.Name()]; !ran {
+			logger.Warn("Health check %s produced no result during startup; its dependency will be gated as %s",
+				check.Name(), e.cfg.TreatUnknownAs)
+		}
+	}
+	return nil
 }

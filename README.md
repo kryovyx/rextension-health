@@ -2,8 +2,8 @@
 
 A comprehensive health checking and dependency management extension for the Rex framework.
 
-[![Go Version](https://img.shields.io/badge/go-1.26+-blue.svg)](https://golang.org/dl/)
-[![Coverage](https://img.shields.io/badge/coverage-99.3%25-brightgreen.svg)](#)
+[![Go Version](https://img.shields.io/badge/go-1.27+-blue.svg)](https://golang.org/dl/)
+[![Coverage](https://img.shields.io/badge/coverage-99.1%25-brightgreen.svg)](#)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## Overview

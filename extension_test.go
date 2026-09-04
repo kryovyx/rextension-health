@@ -7,11 +7,11 @@ package health
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
 
-	"github.com/kryovyx/dix"
 	"github.com/kryovyx/rextension"
 	rxevent "github.com/kryovyx/rextension/event"
 	rxroute "github.com/kryovyx/rextension/route"
@@ -23,7 +23,7 @@ import (
 
 // mockRex is a minimal Rex implementation for testing.
 type mockRex struct {
-	container               dix.Container
+	container               rextension.Container
 	bus                     rxevent.EventBus
 	logger                  rextension.Logger
 	extensions              []rextension.Extension
@@ -38,6 +38,10 @@ type mockRex struct {
 	registerRouterErrOnCall int // 0 means always fail, > 0 means fail on that call number
 	registerRouterCallCount int
 	usedMiddlewares         []func(http.Handler) http.Handler
+
+	routerMiddlewares []mockRouterMW
+	perRoute          []mockPerRouteMW
+	perRouter         []mockPerRouterMW
 }
 
 func newMockRex() *mockRex {
@@ -55,7 +59,7 @@ func (m *mockRex) WithExtensions(ext ...rextension.Extension) rextension.Rex {
 	return m
 }
 func (m *mockRex) WithLogger(l rextension.Logger) rextension.Rex { m.logger = l; return m }
-func (m *mockRex) Container() dix.Container                      { return m.container }
+func (m *mockRex) Container() rextension.Container               { return m.container }
 func (m *mockRex) RegisterRoute(rt rextension.Route) error {
 	m.registerRouteCallCount++
 	if m.registerRouteErr != nil {
@@ -95,6 +99,39 @@ func (m *mockRex) EventBus() rxevent.EventBus { return m.bus }
 func (m *mockRex) Use(mw rextension.Middleware) {
 	m.usedMiddlewares = append(m.usedMiddlewares, mw)
 }
+
+// UseOnRouter and UsePerRoute record what the extension attached, and where.
+func (m *mockRex) UseOnRouter(name string, mw rextension.Middleware, priority int) {
+	m.routerMiddlewares = append(m.routerMiddlewares, mockRouterMW{name: name, mw: mw, priority: priority})
+}
+
+func (m *mockRex) UsePerRoute(f rextension.PerRouteMiddleware, priority int) {
+	m.perRoute = append(m.perRoute, mockPerRouteMW{factory: f, priority: priority})
+}
+
+func (m *mockRex) UsePerRouter(f rextension.PerRouterMiddleware, priority int) {
+	m.perRouter = append(m.perRouter, mockPerRouterMW{factory: f, priority: priority})
+}
+
+// mockPerRouterMW records a UsePerRouter call.
+type mockPerRouterMW struct {
+	factory  rextension.PerRouterMiddleware
+	priority int
+}
+
+// mockRouterMW records a UseOnRouter call.
+type mockRouterMW struct {
+	name     string
+	mw       rextension.Middleware
+	priority int
+}
+
+// mockPerRouteMW records a UsePerRoute call.
+type mockPerRouteMW struct {
+	factory  rextension.PerRouteMiddleware
+	priority int
+}
+
 func (m *mockRex) Logger() rextension.Logger { return m.logger }
 
 var _ rextension.Rex = (*mockRex)(nil)
@@ -116,7 +153,7 @@ func (m *mockLoggerImpl) WithError(err error) rextension.Logger                 
 
 var _ rextension.Logger = (*mockLoggerImpl)(nil)
 
-// mockContainer is a minimal dix.Container implementation for testing.
+// mockContainer is a minimal rextension.Container implementation for testing.
 type mockContainer struct {
 	instances map[interface{}]interface{}
 }
@@ -133,9 +170,11 @@ func (m *mockContainer) Singleton(factory any) error         { return nil }
 func (m *mockContainer) Scoped(factory any) error            { return nil }
 func (m *mockContainer) Transient(factory any) error         { return nil }
 func (m *mockContainer) Instance(v any) error                { m.instances[v] = v; return nil }
-func (m *mockContainer) NewScope() dix.Scope                 { return nil }
 
-var _ dix.Container = (*mockContainer)(nil)
+// Unbind satisfies rextension.Container; the mock never needs to remove a registration.
+func (m *mockContainer) Unbind(v any) (bool, error) { return false, nil }
+
+var _ rextension.Container = (*mockContainer)(nil)
 
 // mockBus is a minimal rxevent.EventBus implementation for testing.
 type mockBus struct {
@@ -441,15 +480,33 @@ func TestHealthExtension_OnInitialize(t *testing.T) {
 	})
 
 	t.Run("ignores_router_already_exists_error", func(t *testing.T) {
-		// Ignores_router_already_exists_error should continue if router already exists.
+		// Two extensions may both want a router; whichever runs second reuses
+		// it rather than aborting.
+		//
+		// Matched with errors.Is against rextension.ErrRouterExists, so the
+		// error text no longer has to say "already exists" — this test used to
+		// construct errors.New("router already exists") and pass only because
+		// the extension did strings.Contains on it (D39).
 		ext := NewHealthExtension(&Config{AtDefaultAddr: false}).(*HealthExtension)
 		r := newMockRex()
-		r.createRouterErr = errors.New("router already exists")
+		r.createRouterErr = fmt.Errorf("%w: health", rextension.ErrRouterExists)
 
 		err := ext.OnInitialize(context.Background(), r)
 
 		if err != nil {
 			t.Fatalf("expected nil error, got %v", err)
+		}
+	})
+
+	t.Run("does_not_match_on_message_text", func(t *testing.T) {
+		// The other half of D39: an unrelated error that happens to contain
+		// "already exists" must not be swallowed.
+		ext := NewHealthExtension(&Config{AtDefaultAddr: false}).(*HealthExtension)
+		r := newMockRex()
+		r.createRouterErr = errors.New("the config file already exists")
+
+		if err := ext.OnInitialize(context.Background(), r); err == nil {
+			t.Fatal("an unrelated error containing \"already exists\" was swallowed")
 		}
 	})
 
@@ -466,111 +523,73 @@ func TestHealthExtension_OnInitialize(t *testing.T) {
 		}
 	})
 
-	t.Run("subscribes_to_router_route_registered_event", func(t *testing.T) {
-		// Subscribes_to_router_route_registered_event should register handler.
+	// The route-registered subscription is gone (P4.12).
+	//
+	// It built an index from route identifier to dependencies which the gate
+	// then looked up per request — keyed by the route's pattern, looked up by
+	// the live URL, so it never matched for a parameterized route and the
+	// gate silently did nothing. The gate is handed the route directly now.
+	t.Run("does_not_subscribe_to_route_registered", func(t *testing.T) {
 		ext := NewHealthExtension(nil).(*HealthExtension)
 		r := newMockRex()
 
 		ext.OnInitialize(context.Background(), r)
 
 		bus := r.bus.(*mockBus)
-		if len(bus.handlers[rxevent.EventTypeRouterRouteRegistered]) != 1 {
-			t.Fatalf("expected 1 handler for EventTypeRouterRouteRegistered, got %d",
-				len(bus.handlers[rxevent.EventTypeRouterRouteRegistered]))
+		if n := len(bus.handlers[rxevent.EventTypeRouterRouteRegistered]); n != 0 {
+			t.Fatalf("the gate must not discover routes through events; %d handler(s) registered", n)
 		}
 	})
 
-	t.Run("registers_dependency_middlewares_when_enabled", func(t *testing.T) {
-		// Registers_dependency_middlewares_when_enabled should register middlewares.
+	t.Run("registers_the_gate_per_route_when_enabled", func(t *testing.T) {
 		ext := NewHealthExtension(&Config{
 			AtDefaultAddr:        true,
 			EnableDependencyGate: true,
 		}).(*HealthExtension)
 		r := newMockRex()
 
-		err := ext.OnInitialize(context.Background(), r)
-
-		if err != nil {
+		if err := ext.OnInitialize(context.Background(), r); err != nil {
 			t.Fatalf("expected nil error, got %v", err)
 		}
-		// Verify two middlewares were registered (route resolver + dep gate)
-		if len(r.usedMiddlewares) != 2 {
-			t.Fatalf("expected 2 middlewares registered, got %d", len(r.usedMiddlewares))
+
+		if len(r.perRoute) != 1 {
+			t.Fatalf("expected 1 per-route factory, got %d", len(r.perRoute))
+		}
+		// One factory, not two middlewares: RouteResolverMiddleware existed
+		// only to give the gate an identifier it no longer needs.
+		if len(r.usedMiddlewares) != 0 {
+			t.Fatalf("expected no global middleware, got %d", len(r.usedMiddlewares))
+		}
+		if got := r.perRoute[0].priority; got != rextension.PriorityHealthGate {
+			t.Errorf("priority = %d, want PriorityHealthGate (%d)", got, rextension.PriorityHealthGate)
 		}
 	})
 
-	t.Run("does_not_register_middlewares_when_gate_disabled", func(t *testing.T) {
-		// Does_not_register_middlewares_when_gate_disabled should not call Use().
+	t.Run("does_not_register_the_gate_when_disabled", func(t *testing.T) {
 		ext := NewHealthExtension(&Config{
 			AtDefaultAddr:        true,
 			EnableDependencyGate: false,
 		}).(*HealthExtension)
 		r := newMockRex()
 
-		err := ext.OnInitialize(context.Background(), r)
-
-		if err != nil {
+		if err := ext.OnInitialize(context.Background(), r); err != nil {
 			t.Fatalf("expected nil error, got %v", err)
+		}
+		if len(r.perRoute) != 0 {
+			t.Fatalf("expected 0 per-route factories, got %d", len(r.perRoute))
 		}
 		if len(r.usedMiddlewares) != 0 {
 			t.Fatalf("expected 0 middlewares, got %d", len(r.usedMiddlewares))
 		}
 	})
 
-	t.Run("event_handler_registers_route_dependencies", func(t *testing.T) {
-		// Event_handler_registers_route_dependencies should add deps to routeDepMap.
-		ext := NewHealthExtension(nil).(*HealthExtension)
-		r := newMockRex()
+	// The two "event_handler_*" subtests that stood here drove the
+	// route-registered subscription. There is no subscription: the framework
+	// hands each route to the per-route factory when the table is built.
+	// The equivalent coverage is in gate_test.go, which exercises the factory
+	// directly — including the parameterized-route case that the index-based
+	// gate silently never handled.
 
-		ext.OnInitialize(context.Background(), r)
-
-		// Create a mock route that implements HealthDepRoute
-		deps := []DepRequirement{NewHardRequirement("db")}
-		healthRoute := &mockHealthDepRoute{
-			method: "GET",
-			path:   "/api/users",
-			deps:   deps,
-		}
-
-		// Emit the event using the actual event type
-		ev := rxevent.NewRouterRouteRegisteredEvent(context.Background(), "default", healthRoute)
-		r.bus.Emit(ev)
-
-		// Verify deps were registered
-		routeID := RouteID("GET", "/api/users")
-		gotDeps := ext.routeDepMap.Get(routeID)
-		if len(gotDeps) != 1 {
-			t.Fatalf("expected 1 dependency, got %d", len(gotDeps))
-		}
-		if gotDeps[0].DepID != "db" {
-			t.Fatalf("expected depID=db, got %s", gotDeps[0].DepID)
-		}
-	})
-
-	t.Run("event_handler_ignores_non_health_routes", func(t *testing.T) {
-		// Event_handler_ignores_non_health_routes should skip routes without HealthDepRoute.
-		ext := NewHealthExtension(nil).(*HealthExtension)
-		r := newMockRex()
-
-		ext.OnInitialize(context.Background(), r)
-
-		// Create a regular route without HealthDepRoute
-		regularRoute := &mockRoute{
-			method: "GET",
-			path:   "/api/simple",
-		}
-
-		// Emit the event using the actual event type
-		ev := rxevent.NewRouterRouteRegisteredEvent(context.Background(), "default", regularRoute)
-		r.bus.Emit(ev)
-
-		// Verify no deps were registered
-		routeID := RouteID("GET", "/api/simple")
-		gotDeps := ext.routeDepMap.Get(routeID)
-		if gotDeps != nil {
-			t.Fatalf("expected nil dependencies, got %v", gotDeps)
-		}
-	})
 }
 
 // --------------------------------------------------------------------------
@@ -893,7 +912,7 @@ func TestHealthExtension_RegisterCheck(t *testing.T) {
 
 		ext.OnInitialize(context.Background(), r)
 
-		check := NewCheck("test-check", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		check := NewCheck("test-check", func(ctx context.Context, resolver rextension.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		})
 		ext.RegisterCheck(check)
@@ -916,7 +935,7 @@ func TestHealthExtension_RegisterCheckFunc(t *testing.T) {
 
 		ext.OnInitialize(context.Background(), r)
 
-		ext.RegisterCheckFunc("func-check", func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+		ext.RegisterCheckFunc("func-check", func(ctx context.Context, resolver rextension.Resolver) *CheckResult {
 			return NewCheckResult(StatusUp, "ok", 0)
 		})
 
@@ -933,7 +952,7 @@ func TestHealthExtension_RegisterCheckFunc(t *testing.T) {
 		ext.OnInitialize(context.Background(), r)
 
 		ext.RegisterCheckFunc("func-check-opts",
-			func(ctx context.Context, resolver dix.Resolver) *CheckResult {
+			func(ctx context.Context, resolver rextension.Resolver) *CheckResult {
 				return NewCheckResult(StatusUp, "ok", 0)
 			},
 			WithTimeout(10*time.Second),
@@ -951,4 +970,130 @@ func TestHealthExtension_RegisterCheckFunc(t *testing.T) {
 			t.Fatalf("expected tags=[critical], got %v", check.Tags())
 		}
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Config options
+// ---------------------------------------------------------------------------
+
+func TestWithTreatUnknownAs(t *testing.T) {
+	if got := NewConfig(WithTreatUnknownAs(StatusDown)).TreatUnknownAs; got != StatusDown {
+		t.Fatalf("TreatUnknownAs = %v", got)
+	}
+	// The default serves rather than refuses: a dependency nobody declared is
+	// not evidence that a route depending on it is broken.
+	if got := NewDefaultConfig().TreatUnknownAs; got != StatusUp {
+		t.Fatalf("default TreatUnknownAs = %v, want StatusUp", got)
+	}
+}
+
+// Checks are declared rather than registered, because OnInitialize runs from
+// Run now (D13): an application can no longer resolve the registry and call
+// Register before Run, since the registry does not exist yet.
+func TestWithCheck_and_WithChecks(t *testing.T) {
+	a := &mockHealthCheck{name: "a"}
+	b := &mockHealthCheck{name: "b"}
+	c := &mockHealthCheck{name: "c"}
+
+	cfg := NewConfig(WithCheck(a), WithChecks(b, c))
+	if len(cfg.Checks) != 3 {
+		t.Fatalf("Checks = %d, want 3", len(cfg.Checks))
+	}
+}
+
+// A nil check is dropped rather than stored, so nothing has to nil-check it at
+// execution time — where the panic would be a startup crash on a health check.
+func TestWithCheck_drops_nils(t *testing.T) {
+	cfg := NewConfig(
+		WithCheck(nil),
+		WithChecks(nil, &mockHealthCheck{name: "real"}, nil),
+	)
+	if len(cfg.Checks) != 1 {
+		t.Fatalf("Checks = %d, want only the non-nil one", len(cfg.Checks))
+	}
+	if cfg.Checks[0].Name() != "real" {
+		t.Fatalf("Checks[0] = %q", cfg.Checks[0].Name())
+	}
+}
+
+func TestWithChecks_with_no_arguments(t *testing.T) {
+	if got := len(NewConfig(WithChecks()).Checks); got != 0 {
+		t.Fatalf("Checks = %d, want 0", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// runInitialChecks (O14)
+// ---------------------------------------------------------------------------
+
+// Every declared check runs once before any listener binds, so the gate has a
+// known state to work from rather than gating on "unknown" for the first
+// request to each dependency.
+func TestRunInitialChecks_records_every_result_before_serving(t *testing.T) {
+	up := &mockHealthCheck{name: "up"}
+	down := &mockHealthCheck{
+		name:       "down",
+		resultFunc: func() *CheckResult { return &CheckResult{Status: StatusDown, Message: "refused"} },
+	}
+	degraded := &mockHealthCheck{
+		name:       "degraded",
+		resultFunc: func() *CheckResult { return &CheckResult{Status: StatusDegraded, Message: "slow"} },
+	}
+
+	ext := NewHealthExtension(NewConfig(WithChecks(up, down, degraded))).(*HealthExtension)
+	r := newMockRex()
+	if err := ext.OnInitialize(context.Background(), r); err != nil {
+		t.Fatalf("OnInitialize: %v", err)
+	}
+
+	// A failing dependency is not a startup failure: refusing to boot while a
+	// dependency restarts is worse than booting and refusing the affected
+	// routes. What matters is that the state is known.
+	if err := ext.runInitialChecks(context.Background(), r.Logger()); err != nil {
+		t.Fatalf("a failing check must not fail the boot, got %v", err)
+	}
+
+	for name, want := range map[string]Status{
+		"up": StatusUp, "down": StatusDown, "degraded": StatusDegraded,
+	} {
+		state := ext.stateStore.Get(name)
+		if state == nil {
+			t.Errorf("%s has no recorded state after the initial pass", name)
+			continue
+		}
+		if got := state.Clone().Status; got != want {
+			t.Errorf("%s recorded as %v, want %v", name, got, want)
+		}
+	}
+	if up.execCount != 1 {
+		t.Errorf("the up check ran %d times, want 1", up.execCount)
+	}
+}
+
+// A check producing no result at all leaves its dependency unknown, which is
+// then TreatUnknownAs's decision — and worth a warning, because it is the one
+// case the initial pass could not resolve.
+func TestRunInitialChecks_warns_about_a_check_with_no_result(t *testing.T) {
+	silent := &mockHealthCheck{name: "silent", resultFunc: func() *CheckResult { return nil }}
+
+	ext := NewHealthExtension(NewConfig(WithCheck(silent))).(*HealthExtension)
+	r := newMockRex()
+	if err := ext.OnInitialize(context.Background(), r); err != nil {
+		t.Fatal(err)
+	}
+	if err := ext.runInitialChecks(context.Background(), r.Logger()); err != nil {
+		t.Fatalf("runInitialChecks: %v", err)
+	}
+}
+
+// With nothing declared there is nothing to run.
+func TestRunInitialChecks_with_no_checks(t *testing.T) {
+	ext := NewHealthExtension(NewConfig()).(*HealthExtension)
+	r := newMockRex()
+	if err := ext.OnInitialize(context.Background(), r); err != nil {
+		t.Fatal(err)
+	}
+	if err := ext.runInitialChecks(context.Background(), r.Logger()); err != nil {
+		t.Fatalf("runInitialChecks: %v", err)
+	}
 }

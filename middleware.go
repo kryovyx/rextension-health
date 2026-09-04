@@ -80,8 +80,27 @@ type MiddlewareConfig struct {
 	Resolver interface{}
 	// FailureStatusCode is the HTTP status code for hard failures (default: 503).
 	FailureStatusCode int
-	// FailureMessage is the response message for hard failures.
+	// FailureMessage is the problem document's detail for hard failures.
+	//
+	// SAFE TEXT ONLY. It reaches the client verbatim, so it must not name the
+	// dependency that failed: doing so maps the internal service topology for
+	// any caller who probes endpoints during an outage (D30). The identifier
+	// and its state go to the Logger below.
 	FailureMessage string
+
+	// TreatUnknownAs is the status an unknown dependency is gated as.
+	//
+	// The zero value is StatusUp, which serves. See Config.TreatUnknownAs for
+	// why availability-gating fails open where authorization fails closed
+	// (O14).
+	TreatUnknownAs Status
+
+	// Logger records which dependency actually refused the request.
+	//
+	// The client's problem document is deliberately generic, so without
+	// somewhere to write the specifics an operator would have nothing to
+	// correlate. Optional; nil disables the logging.
+	Logger rx.Logger
 	// UseCache determines whether to use SnapshotCache or direct StateStore.
 	UseCache bool
 }
@@ -97,8 +116,18 @@ func DefaultMiddlewareConfig() MiddlewareConfig {
 
 // RegisterMiddlewares registers the health middleware stack (route resolver +
 // dependency gate) on the provided Rex instance's default router.
+// RegisterMiddlewares attaches the dependency gate.
+//
+// Attached per route (P4.12), so it runs only on routes that declare
+// dependencies. Two things go away with the change:
+//
+//   - RouteResolverMiddleware, which existed to put a route identifier in the
+//     request context for the gate to read. The gate is handed the route
+//     itself now, so there is nothing to resolve.
+//   - The global attachment, which ran the gate on every request to every
+//     router — including the health and metrics listeners, where it could
+//     only look up a route with no dependencies and call next.
 func RegisterMiddlewares(r rx.Rex, cfg MiddlewareConfig) error {
-	r.Use(RouteResolverMiddleware())
-	r.Use(DependencyGateMiddleware(cfg))
+	r.UsePerRoute(DependencyGateFactory(cfg), rx.PriorityHealthGate)
 	return nil
 }

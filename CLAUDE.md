@@ -23,9 +23,10 @@ which is exactly the defect this module was fixed for.
   space, an imperative summary; no `type(scope)` prefix. At most one trailer,
   and no generated footers.
 - `make check` here runs fmt, vet and race tests for this module alone.
-- Default branch is `main`. **Never push without asking** — github
-  authenticates with a hardware key that needs a physical tap, so an
-  unattended push hangs and then fails.
+- Default branch is `main`.
+- **Contributing:** the framework is in alpha and external contributions open
+  at `v1.0.0`. Packages carry a CONTRIBUTING.md with the rules that will
+  apply; they are the same rules as these.
 
 Design decisions are numbered (D…/O…/W…) and recorded in the workspace this
 module is developed in, not in this repo. If a rule here looks arbitrary, it is

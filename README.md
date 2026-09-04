@@ -426,9 +426,13 @@ spec:
 
 ## Contributing
 
-**At this time, this project is in active development and is not open for external contributions.** The framework is still being refined and major interfaces may change.
+**The framework is in alpha, and external contributions open at `v1.0.0`.**
+Until then pull requests will be closed unmerged — but issues are very welcome.
+Bug reports, questions and feature requests all feed into what `v1.0.0` looks
+like.
 
-Once the framework reaches a stable architecture and API, contributions from the community will be welcome. Please check back later or open an issue if you have feature requests or feedback.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the rules that will apply, and
+[COMMIT-CONVENTIONS.md](COMMIT-CONVENTIONS.md) for the commit format.
 
 ## License
 

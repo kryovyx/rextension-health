@@ -424,6 +424,13 @@ spec:
 7. **Cache appropriately**: Balance freshness vs. performance with `SnapshotTTL`
 8. **Declare route dependencies**: Implement `HealthDepRoute` on routes to enable targeted dependency gating
 
+## Upgrading
+
+**v0.2.1 → v0.3.0.** [MIGRATION.md](MIGRATION.md) is the upgrade guide for this
+module, written to stand alone — it carries the dependency-ordered `go get`
+sequence, every breaking change here, and what to verify afterwards. Other
+modules of the framework each have their own; that file links to them.
+
 ## Contributing
 
 **The framework is in alpha, and external contributions open at `v1.0.0`.**
